@@ -241,3 +241,38 @@ research/
 - [ ] WhatsApp/Discord alerts (in addition to Telegram)
 - [ ] AI trade journal — auto-summarise week's trades with lessons
 - [ ] Watchlist with price target tracking
+
+---
+
+## v4 Changes (Latest)
+
+### What changed
+- **Analyzer Pro** now AI-powered via Anthropic API + web search (yfinance only for Railway)
+- **All Research tabs** now powered by Claude + web search — real analysis, not scraped data
+- **Telegram bot commands** — send /positions /pnl /account /close AAPL /closeall from Telegram
+- **Telegram webhook route** — POST /telegram/webhook to register with BotFather
+- **Stock Charts** in Analyzer Pro tab
+- **Compare tab** — multi-stock relative performance chart
+
+### New env var needed
+```
+ANTHROPIC_API_KEY = your_anthropic_api_key
+```
+Get from: https://console.anthropic.com/settings/api-keys
+
+### Telegram bot setup (to receive commands)
+After deploying to Railway, register webhook:
+```
+curl "https://api.telegram.org/bot{YOUR_TOKEN}/setWebhook?url=https://YOUR-RAILWAY-URL/telegram/webhook"
+```
+Then you can message your bot:
+- /positions — live positions
+- /pnl — P&L summary  
+- /account — balance
+- /close AAPL — close one stock
+- /closeall — emergency close all
+
+### Why AI-powered research?
+- Financial APIs (yfinance, Yahoo Finance, SEC EDGAR) blocked in sandbox but work on Railway
+- Claude + web search gives BETTER analysis than raw data — actual thesis, context, cross-referencing
+- Single source of truth for all research — no API keys needed for research features

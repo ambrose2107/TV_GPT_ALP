@@ -260,3 +260,155 @@ def api_research_insider():
 @dashboard_bp.route("/health")
 def health():
     return jsonify({"status":"ok"})
+
+# ── AI Research routes (Anthropic API powered) ────────────────────────────────
+@dashboard_bp.route("/api/ai/institutional", methods=["GET"])
+def api_ai_institutional():
+    e = _auth()
+    if e: return e
+    try:
+        from research.ai_research import get_institutional_analysis
+        return jsonify(get_institutional_analysis())
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+@dashboard_bp.route("/api/ai/earnings", methods=["GET"])
+def api_ai_earnings():
+    e = _auth()
+    if e: return e
+    try:
+        from research.ai_research import get_earnings_whiplash
+        return jsonify(get_earnings_whiplash())
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+@dashboard_bp.route("/api/ai/sectors", methods=["GET"])
+def api_ai_sectors():
+    e = _auth()
+    if e: return e
+    try:
+        from research.ai_research import get_sector_rotation
+        return jsonify(get_sector_rotation())
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+@dashboard_bp.route("/api/ai/insider", methods=["POST"])
+def api_ai_insider():
+    e = _auth()
+    if e: return e
+    try:
+        data    = request.json or {}
+        symbols = data.get("symbols", None)
+        from research.ai_research import get_insider_confluence
+        return jsonify(get_insider_confluence(symbols))
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+@dashboard_bp.route("/api/ai/analyze", methods=["POST"])
+def api_ai_analyze():
+    e = _auth()
+    if e: return e
+    try:
+        data      = request.json or {}
+        symbols   = data.get("symbols", [])
+        timeframes= data.get("timeframes", ["1D"])
+        from research.ai_research import analyze_stocks_ai
+        return jsonify(analyze_stocks_ai(symbols, timeframes))
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+
+# ── Telegram bot webhook (incoming messages from user) ────────────────────────
+@dashboard_bp.route("/telegram/webhook", methods=["POST"])
+def telegram_webhook():
+    """Handle incoming Telegram messages — user can command the bot."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        msg  = data.get("message", {})
+        text = msg.get("text", "").strip().lower()
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+
+        # Only respond to authorised chat
+        if chat_id != Config.TELEGRAM_CHAT_ID:
+            return jsonify({"ok": True})
+
+        from core.telegram import send_telegram
+
+        if text in ["/positions", "/pos"]:
+            positions = alpaca.get_positions()
+            if not positions:
+                send_telegram("📊 <b>No open positions</b>")
+            else:
+                lines = ["📊 <b>Open Positions</b>\n━━━━━━━━━━━━━━"]
+                for p in positions:
+                    pnl = float(p.get("unrealized_pl", 0))
+                    pct = float(p.get("unrealized_plpc", 0)) * 100
+                    lines.append(
+                        f"📌 <b>{p['symbol']}</b> | Qty: {p['qty']}\n"
+                        f"   Entry: ${p.get('avg_entry_price','?')} | Now: ${p.get('current_price','?')}\n"
+                        f"   P&L: <b>${pnl:+.2f} ({pct:+.2f}%)</b>"
+                    )
+                send_telegram("\n\n".join(lines))
+
+        elif text in ["/pnl", "/summary"]:
+            from core.database import get_closed_summary
+            s = get_closed_summary()
+            if not s or not s.get("total_trades"):
+                send_telegram("📋 No closed trades yet.")
+            else:
+                wr = (s["winners"] / s["total_trades"] * 100) if s["total_trades"] else 0
+                send_telegram(
+                    f"📋 <b>P&L Summary</b>\n━━━━━━━━━━━━━━\n"
+                    f"Total Trades: <b>{s['total_trades']}</b>\n"
+                    f"Win Rate: <b>{wr:.1f}%</b>\n"
+                    f"Total P&L: <b>${s['total_pnl']:+.2f}</b>\n"
+                    f"Best: <b>${s['best_trade']:+.2f}</b>\n"
+                    f"Worst: <b>${s['worst_trade']:+.2f}</b>"
+                )
+
+        elif text in ["/account", "/balance"]:
+            acc = alpaca.get_account()
+            pnl = float(acc.get("equity", 0)) - float(acc.get("last_equity", 0))
+            send_telegram(
+                f"💼 <b>Account</b>\n━━━━━━━━━━━━━━\n"
+                f"Portfolio: <b>${float(acc.get('portfolio_value',0)):,.2f}</b>\n"
+                f"Buying Power: <b>${float(acc.get('buying_power',0)):,.2f}</b>\n"
+                f"Today P&L: <b>${pnl:+.2f}</b>"
+            )
+
+        elif text in ["/closeall", "/close_all"]:
+            alpaca.close_all_positions()
+            send_telegram("🚨 <b>ALL POSITIONS CLOSED</b> via Telegram command.")
+
+        elif text.startswith("/close "):
+            sym = text.split(" ")[1].upper()
+            try:
+                pos = alpaca.get_position(sym)
+                if pos:
+                    alpaca.close_position(sym)
+                    send_telegram(f"✅ <b>{sym}</b> position closed.")
+                else:
+                    send_telegram(f"⚠️ No open position found for {sym}.")
+            except Exception as ex:
+                send_telegram(f"❌ Failed to close {sym}: {str(ex)[:100]}")
+
+        elif text in ["/help", "/start"]:
+            send_telegram(
+                "🤖 <b>Trading Bot Commands</b>\n━━━━━━━━━━━━━━\n"
+                "/positions — view open positions\n"
+                "/pnl — P&L summary\n"
+                "/account — account balance\n"
+                "/close AAPL — close a specific stock\n"
+                "/closeall — close ALL positions\n"
+                "/help — this message"
+            )
+        else:
+            send_telegram(
+                "❓ Unknown command. Send /help for the list of commands."
+            )
+
+        return jsonify({"ok": True})
+
+    except Exception as ex:
+        logger.error(f"Telegram webhook error: {ex}")
+        return jsonify({"ok": True})
