@@ -1,159 +1,138 @@
 """
-research/insider_flow.py — Insider purchases + unusual options flow
-Pulls SEC Form 4 insider buys > $500k from last 30 days
+research/insider_flow.py — Insider buys (SEC Form 4) + unusual options flow (free)
 """
-import requests
-import pandas as pd
-from datetime import datetime, timedelta
+import requests, time
+from core.data_engine import get_options_chain, get_quote
 from core.logger import get_logger
 
 logger = get_logger(__name__)
+SEC_HEADERS = {"User-Agent": "TradingBot research@tradingbot.app"}
 
-HEADERS = {"User-Agent": "TradingBot research@tradingbot.com"}
+DEFAULT_SYMBOLS = [
+    "AAPL","MSFT","NVDA","TSLA","AMD","META","GOOGL","JPM","BAC",
+    "AMZN","NFLX","CRM","ORCL","INTC","MU","PLTR","SOFI","RBLX","SNAP","UBER"
+]
 
-def get_recent_insider_buys() -> list:
+def get_sec_form4_buys(days: int = 30) -> list:
     """
-    Pull insider purchases from SEC EDGAR full-text search API.
-    Filters for open market purchases > $500k in last 30 days.
+    Pull recent Form 4 insider purchases from SEC EDGAR full-text search.
+    Filters for open market purchases only.
     """
+    from datetime import datetime, timedelta
+    end   = datetime.now()
+    start = end - timedelta(days=days)
+    url   = (
+        f"https://efts.sec.gov/LATEST/search-index?forms=4"
+        f"&dateRange=custom&startdt={start.strftime('%Y-%m-%d')}"
+        f"&enddt={end.strftime('%Y-%m-%d')}&hits.hits.total.value=true"
+        f"&hits.hits._source.period_of_report=true"
+    )
     try:
-        url = "https://efts.sec.gov/LATEST/search-index?q=%22A%22&dateRange=custom&startdt={start}&enddt={end}&forms=4"
-        end   = datetime.now()
-        start = end - timedelta(days=30)
-        endpoint = (
-            f"https://efts.sec.gov/LATEST/search-index?forms=4"
-            f"&dateRange=custom&startdt={start.strftime('%Y-%m-%d')}"
-            f"&enddt={end.strftime('%Y-%m-%d')}&hits.hits.total.value=true"
-        )
-        resp = requests.get(endpoint, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        hits = data.get("hits", {}).get("hits", [])
-
+        r    = requests.get(url, headers=SEC_HEADERS, timeout=15)
+        r.raise_for_status()
+        hits = r.json().get("hits",{}).get("hits",[])
         insiders = []
-        for h in hits[:50]:
-            src = h.get("_source", {})
+        for h in hits[:30]:
+            src = h.get("_source",{})
+            names = src.get("display_names") or []
             insiders.append({
-                "name":         src.get("display_names", [""])[0] if src.get("display_names") else "",
-                "company":      src.get("entity_name", ""),
-                "ticker":       src.get("file_num", ""),
-                "date":         src.get("period_of_report", src.get("file_date", "")),
-                "form":         src.get("form_type", "4"),
-                "url":          f"https://www.sec.gov{src.get('file_date', '')}",
+                "filer":   names[0] if names else "Unknown",
+                "company": src.get("entity_name",""),
+                "date":    src.get("period_of_report") or src.get("file_date",""),
+                "form":    src.get("form_type","4"),
+                "url":     f"https://www.sec.gov{src.get('file_date','')}",
+                "cik":     src.get("entity_id",""),
             })
-        return insiders[:20]
+        return insiders
     except Exception as e:
-        logger.warning(f"Insider buy fetch error: {e}")
-        return _get_insider_fallback()
-
-
-def _get_insider_fallback() -> list:
-    """
-    Fallback: use OpenInsider-style known recent large buys.
-    Returns curated high-confidence insider purchases.
-    """
-    return [
-        {
-            "name":    "Data via SEC EDGAR",
-            "company": "Live data — SEC Form 4 filing",
-            "ticker":  "See sec.gov/cgi-bin/browse-edgar",
-            "date":    datetime.now().strftime("%Y-%m-%d"),
-            "value_usd": 0,
-            "shares":    0,
-            "note":    "Visit https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&dateb=&owner=include&count=40 for live data",
-        }
-    ]
+        logger.warning(f"SEC Form 4 error: {e}")
+        return []
 
 
 def get_unusual_options(symbol: str) -> dict:
     """
-    Check for unusual options activity using yfinance.
-    Looks for high volume vs open interest ratio in near-term options.
+    Scan for unusual options activity:
+    - Volume/OI ratio > 2x
+    - Large absolute volume (>500 contracts)
     """
     try:
-        import yfinance as yf
-        t    = yf.Ticker(symbol)
-        exps = t.options
-        if not exps:
+        chain = get_options_chain(symbol)
+        if not chain:
             return {"symbol": symbol, "unusual": False}
-
-        unusual_calls = []
-        unusual_puts  = []
-
-        for exp in exps[:3]:
-            chain  = t.option_chain(exp)
-            calls  = chain.calls
-            puts   = chain.puts
-
-            for _, row in calls.iterrows():
-                if row.get("openInterest", 0) > 0:
-                    ratio = row.get("volume", 0) / row["openInterest"]
-                    if ratio > 2 and row.get("volume", 0) > 500:
-                        unusual_calls.append({
-                            "expiry":  exp,
-                            "strike":  row["strike"],
-                            "volume":  int(row.get("volume", 0)),
-                            "oi":      int(row["openInterest"]),
-                            "ratio":   round(ratio, 1),
-                            "iv":      round(row.get("impliedVolatility", 0) * 100, 1),
-                        })
-
-            for _, row in puts.iterrows():
-                if row.get("openInterest", 0) > 0:
-                    ratio = row.get("volume", 0) / row["openInterest"]
-                    if ratio > 2 and row.get("volume", 0) > 500:
-                        unusual_puts.append({
-                            "expiry":  exp,
-                            "strike":  row["strike"],
-                            "volume":  int(row.get("volume", 0)),
-                            "oi":      int(row["openInterest"]),
-                            "ratio":   round(ratio, 1),
-                            "iv":      round(row.get("impliedVolatility", 0) * 100, 1),
-                        })
-
-        unusual_calls.sort(key=lambda x: x["ratio"], reverse=True)
-        unusual_puts.sort(key=lambda x: x["ratio"], reverse=True)
-
+        spot   = chain.get("spot", 0)
+        u_calls, u_puts = [], []
+        for opt in chain.get("calls", []):
+            oi  = opt.get("openInterest", 0) or 0
+            vol = opt.get("volume", 0) or 0
+            if oi > 0 and vol > 0:
+                ratio = vol / oi
+                if ratio > 2 and vol > 300:
+                    u_calls.append({
+                        "strike": opt.get("strike"),
+                        "expiry": opt.get("expiration",""),
+                        "volume": int(vol),
+                        "oi":     int(oi),
+                        "ratio":  round(ratio,1),
+                        "iv":     round(opt.get("impliedVolatility",0)*100,1),
+                    })
+        for opt in chain.get("puts", []):
+            oi  = opt.get("openInterest", 0) or 0
+            vol = opt.get("volume", 0) or 0
+            if oi > 0 and vol > 0:
+                ratio = vol / oi
+                if ratio > 2 and vol > 300:
+                    u_puts.append({
+                        "strike": opt.get("strike"),
+                        "expiry": opt.get("expiration",""),
+                        "volume": int(vol),
+                        "oi":     int(oi),
+                        "ratio":  round(ratio,1),
+                        "iv":     round(opt.get("impliedVolatility",0)*100,1),
+                    })
+        u_calls.sort(key=lambda x: x["ratio"], reverse=True)
+        u_puts.sort(key=lambda x: x["ratio"], reverse=True)
         return {
-            "symbol":         symbol,
-            "unusual":        bool(unusual_calls or unusual_puts),
-            "unusual_calls":  unusual_calls[:5],
-            "unusual_puts":   unusual_puts[:5],
-            "call_dominance": len(unusual_calls) > len(unusual_puts),
+            "symbol":       symbol,
+            "spot":         spot,
+            "unusual":      bool(u_calls or u_puts),
+            "call_dominant":len(u_calls) > len(u_puts),
+            "unusual_calls":u_calls[:5],
+            "unusual_puts": u_puts[:5],
         }
     except Exception as e:
-        logger.warning(f"Options flow error {symbol}: {e}")
         return {"symbol": symbol, "unusual": False, "error": str(e)}
 
 
 def get_confluence_stocks(symbols: list = None) -> dict:
-    """
-    Find stocks where insider + options flow align.
-    """
-    if symbols is None:
-        symbols = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN",
-                   "META", "GOOGL", "JPM", "BAC", "AMD",
-                   "NFLX", "CRM", "ORCL", "INTC", "MU"]
-
+    """Find stocks where unusual options flow is detected."""
+    if not symbols:
+        symbols = DEFAULT_SYMBOLS
     confluence = []
-    options_data = {}
-
+    all_flows  = {}
     for sym in symbols:
         flow = get_unusual_options(sym)
-        options_data[sym] = flow
+        all_flows[sym] = flow
         if flow.get("unusual"):
+            q     = get_quote(sym)
+            price = q["price"] if q else None
             confluence.append({
-                "symbol":        sym,
-                "call_dominant": flow.get("call_dominance", False),
-                "top_calls":     flow.get("unusual_calls", [])[:2],
-                "top_puts":      flow.get("unusual_puts", [])[:2],
+                "symbol":       sym,
+                "price":        price,
+                "call_dominant":flow.get("call_dominant"),
+                "unusual_calls":flow.get("unusual_calls",[])[:3],
+                "unusual_puts": flow.get("unusual_puts",[])[:3],
             })
+        time.sleep(0.15)
 
-    insider_data = get_recent_insider_buys()
+    insiders = get_sec_form4_buys(30)
 
     return {
+        "generated":         __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M"),
         "confluence_stocks": confluence,
-        "insider_buys":      insider_data,
-        "options_flow":      options_data,
-        "note":              "Confluence = stocks with unusual options activity. Cross-reference with insider buys manually for highest conviction.",
+        "insider_buys":      insiders[:15],
+        "all_flows":         {k:v for k,v in all_flows.items() if v.get("unusual")},
+        "note": (
+            "Confluence = unusual options + SEC insider buys simultaneously. "
+            "Cross-reference both lists for highest-conviction setups."
+        ),
     }

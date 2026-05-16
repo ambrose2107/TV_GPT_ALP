@@ -1,280 +1,320 @@
 """
-core/analyzer.py — Analyzer Pro logic in Python
-Replicates RSI, MACD, ADX, Bollinger, EMA50, VWAP across timeframes using yfinance
+core/analyzer.py — Analyzer Pro: full technical analysis engine
+Uses free Yahoo Finance data. Works on Railway.
+Graceful fallback for sandbox (network blocked).
 """
-import yfinance as yf
-import pandas as pd
-import numpy as np
+import math
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-TIMEFRAMES = {
-    "5m":  {"period": "5d",  "interval": "5m"},
-    "15m": {"period": "5d",  "interval": "15m"},
-    "1h":  {"period": "30d", "interval": "1h"},
-    "4h":  {"period": "60d", "interval": "1h"},   # aggregate 4 x 1h
-    "1D":  {"period": "1y",  "interval": "1d"},
-    "1W":  {"period": "5y",  "interval": "1wk"},
+# ── Indicator calculations (pure Python, no pandas needed) ──────────────────
+
+def _clean(lst):
+    return [x for x in (lst or []) if x is not None]
+
+def calc_rsi(closes, period=14):
+    c = _clean(closes)
+    if len(c) < period + 1:
+        return None
+    gains, losses = [], []
+    for i in range(1, len(c)):
+        d = c[i] - c[i-1]
+        gains.append(max(d, 0))
+        losses.append(max(-d, 0))
+    avg_g = sum(gains[:period]) / period
+    avg_l = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        avg_g = (avg_g * (period-1) + gains[i]) / period
+        avg_l = (avg_l * (period-1) + losses[i]) / period
+    if avg_l == 0:
+        return 100.0
+    rs = avg_g / avg_l
+    return round(100 - 100/(1+rs), 2)
+
+def rsi_label(v):
+    if v is None: return "N/A", 6
+    if v >= 80:   return "Extreme Overbought", 2
+    if v >= 70:   return "Overbought", 2
+    if v >= 60:   return "Slightly Bull",  4
+    if v >= 55:   return "Neutral-Bull",   5
+    if v >= 45:   return "Neutral",        6
+    if v >= 40:   return "Neutral-Bear",   7
+    if v >= 30:   return "Oversold",       9
+    return "Extreme Oversold", 10
+
+def calc_ema(closes, span):
+    c = _clean(closes)
+    if len(c) < span:
+        return None
+    k, ema = 2/(span+1), c[0]
+    for price in c[1:]:
+        ema = price * k + ema * (1-k)
+    return round(ema, 4)
+
+def calc_macd(closes):
+    c = _clean(closes)
+    if len(c) < 26:
+        return None, None, None
+    def ema_series(data, span):
+        k, s = 2/(span+1), data[0]
+        result = [s]
+        for p in data[1:]:
+            s = p*k + s*(1-k)
+            result.append(s)
+        return result
+    ema12 = ema_series(c, 12)
+    ema26 = ema_series(c, 26)
+    macd  = [a-b for a,b in zip(ema12, ema26)]
+    sig   = ema_series(macd, 9)
+    hist  = macd[-1] - sig[-1]
+    return round(macd[-1], 4), round(sig[-1], 4), round(hist, 4)
+
+def macd_label(macd, signal, hist):
+    if macd is None: return "N/A", 6
+    if macd > 0 and hist > 0 and macd > signal: return "Strong Bull", 1
+    if macd > 0 and hist > 0:                   return "Bull",        3
+    if macd > 0 and hist < 0:                   return "Weakening",   5
+    if macd < 0 and hist > 0:                   return "Recovering",  7
+    if macd < 0 and hist < 0 and macd < signal: return "Strong Bear", 10
+    if macd < 0 and hist < 0:                   return "Bear",        8
+    return "Neutral", 6
+
+def calc_bb(closes, period=20, std_mult=2):
+    c = _clean(closes)
+    if len(c) < period:
+        return None, None, None, None
+    window = c[-period:]
+    mid    = sum(window) / period
+    var    = sum((x-mid)**2 for x in window) / period
+    sigma  = math.sqrt(var)
+    upper  = mid + std_mult * sigma
+    lower  = mid - std_mult * sigma
+    pct_b  = (c[-1] - lower) / (upper - lower) if upper != lower else 0.5
+    return round(upper,4), round(mid,4), round(lower,4), round(pct_b,4)
+
+def bb_label(pct_b):
+    if pct_b is None: return "N/A", 6
+    if pct_b >= 1.1:  return "Extreme Upper", 1
+    if pct_b >= 0.8:  return "Upper Break",   3
+    if pct_b >= 0.6:  return "Above Mid",     4
+    if pct_b >= 0.4:  return "In Bands",      6
+    if pct_b >= 0.2:  return "Below Mid",     7
+    if pct_b >= 0.0:  return "Lower Break",   9
+    return "Extreme Lower", 10
+
+def calc_adx(highs, lows, closes, period=14):
+    h = _clean(highs); l = _clean(lows); c = _clean(closes)
+    n = min(len(h), len(l), len(c))
+    if n < period + 1:
+        return None, None, None
+    h, l, c = h[-n:], l[-n:], c[-n:]
+    trs, dmp, dmn = [], [], []
+    for i in range(1, n):
+        tr  = max(h[i]-l[i], abs(h[i]-c[i-1]), abs(l[i]-c[i-1]))
+        dm_plus  = max(h[i]-h[i-1], 0) if (h[i]-h[i-1]) > (l[i-1]-l[i]) else 0
+        dm_minus = max(l[i-1]-l[i], 0) if (l[i-1]-l[i]) > (h[i]-h[i-1]) else 0
+        trs.append(tr); dmp.append(dm_plus); dmn.append(dm_minus)
+    def smooth(data, p):
+        s = sum(data[:p])
+        result = [s]
+        for x in data[p:]:
+            s = s - s/p + x
+            result.append(s)
+        return result
+    atr = smooth(trs, period); dip = smooth(dmp, period); din = smooth(dmn, period)
+    adx_vals = []
+    for i in range(len(atr)):
+        if atr[i] == 0: continue
+        di_plus  = 100 * dip[i] / atr[i]
+        di_minus = 100 * din[i] / atr[i]
+        if di_plus + di_minus == 0: continue
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx_vals.append(dx)
+    if not adx_vals:
+        return None, None, None
+    adx_smooth = sum(adx_vals[-period:]) / min(period, len(adx_vals))
+    atr_last   = atr[-1]
+    dip_last   = 100 * dip[-1] / atr_last if atr_last else 0
+    din_last   = 100 * din[-1] / atr_last if atr_last else 0
+    return round(adx_smooth,1), round(dip_last,1), round(din_last,1)
+
+def adx_label(adx, dip, din):
+    if adx is None: return "N/A", 6
+    if adx < 20:                    return "No Trend",       6
+    up = dip > din
+    if adx >= 50 and up:            return "Extreme Up",     1
+    if adx >= 40 and up:            return "Very Strong Up", 2
+    if adx >= 30 and up:            return "Strong Up",      3
+    if adx >= 20 and up:            return "Trending Up",    4
+    if adx >= 50 and not up:        return "Extreme Down",   10
+    if adx >= 40 and not up:        return "Very Strong Dn", 9
+    if adx >= 30 and not up:        return "Strong Down",    8
+    return "Trending Down", 7
+
+def calc_vwap(highs, lows, closes, volumes):
+    h = _clean(highs); l = _clean(lows); c = _clean(closes); v = _clean(volumes)
+    n = min(len(h), len(l), len(c), len(v))
+    if n < 2: return None, None
+    cum_tv = cum_v = 0
+    for i in range(n):
+        typ = (h[i]+l[i]+c[i])/3
+        cum_tv += typ * v[i]
+        cum_v  += v[i]
+    vwap = cum_tv / cum_v if cum_v else c[-1]
+    pct  = (c[-1] - vwap) / vwap * 100 if vwap else 0
+    return round(vwap, 4), round(pct, 2)
+
+def vwap_label(pct):
+    if pct is None: return "N/A", 6
+    if pct >= 3:   return "Far Over",     2
+    if pct >= 1:   return "Over",         4
+    if pct >= 0.2: return "Slightly Over",5
+    if pct >= -0.2:return "Near VWAP",    6
+    if pct >= -1:  return "Slightly Under",7
+    if pct >= -3:  return "Under",        8
+    return "Far Under", 9
+
+def ema50_label(pct):
+    if pct is None: return "N/A", 6
+    if pct >= 8:   return "Super Uptrend",  1
+    if pct >= 4:   return "Strong Uptrend", 2
+    if pct >= 1:   return "Uptrend",        4
+    if pct >= -1:  return "Consolidating",  6
+    if pct >= -4:  return "Downtrend",      8
+    if pct >= -8:  return "Strong Downtrend",9
+    return "Super Downtrend", 10
+
+def score_to_signal(avg):
+    if avg <= 2:   return "Strong Bull 🟢", "bull2"
+    if avg <= 4:   return "Bull 🟢",        "bull1"
+    if avg <= 5.5: return "Slightly Bull 🟡","bln"
+    if avg <= 6.5: return "Neutral ⚪",     "neut"
+    if avg <= 8:   return "Slightly Bear 🟠","brn"
+    if avg <= 9:   return "Bear 🔴",        "bear1"
+    return "Strong Bear 🔴", "bear2"
+
+INTERVAL_MAP = {
+    "5m":  ("5m",  "5d"),
+    "15m": ("15m", "5d"),
+    "1h":  ("1h",  "30d"),
+    "4h":  ("1h",  "60d"),   # aggregate later
+    "1D":  ("1d",  "6mo"),
+    "1W":  ("1wk", "5y"),
 }
 
-# ── RSI ───────────────────────────────────────────────────────────────────────
-def calc_rsi(close: pd.Series, period=14) -> float:
-    delta = close.diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
-    rs    = gain / loss.replace(0, np.nan)
-    rsi   = 100 - (100 / (1 + rs))
-    return round(float(rsi.iloc[-1]), 2) if not rsi.empty else None
+def analyze_one_tf(chart: dict) -> dict:
+    """Run all 6 indicators on chart data."""
+    if not chart:
+        return {"error": "no data"}
+    c = _clean(chart.get("close",  []))
+    h = _clean(chart.get("high",   []))
+    l = _clean(chart.get("low",    []))
+    v = _clean(chart.get("volume", []))
+    if len(c) < 20:
+        return {"error": f"too few bars ({len(c)})"}
 
-def rsi_judgment(val):
-    if val is None: return "N/A"
-    if val >= 80:   return "Extreme Overbought"
-    if val >= 70:   return "Overbought"
-    if val >= 65:   return "Strong Up"
-    if val >= 60:   return "Mod Up"
-    if val >= 55:   return "Slightly Up"
-    if val >= 45:   return "Neutral"
-    if val >= 40:   return "Slightly Down"
-    if val >= 35:   return "Mod Down"
-    if val >= 30:   return "Oversold"
-    return "Extreme Oversold"
+    scores = []
+    row    = {}
 
-# ── MACD ──────────────────────────────────────────────────────────────────────
-def calc_macd(close: pd.Series):
-    ema12  = close.ewm(span=12, adjust=False).mean()
-    ema26  = close.ewm(span=26, adjust=False).mean()
-    macd   = ema12 - ema26
-    signal = macd.ewm(span=9, adjust=False).mean()
-    hist   = macd - signal
-    return float(macd.iloc[-1]), float(signal.iloc[-1]), float(hist.iloc[-1])
-
-def macd_judgment(macd, signal, hist):
-    if macd is None: return "N/A"
-    if macd > 0 and hist > 0 and macd > signal:  return "Strong Bull"
-    if macd > 0 and hist > 0:                     return "Bull"
-    if macd > 0 and hist < 0:                     return "Weakening Bull"
-    if macd < 0 and hist < 0 and macd < signal:   return "Strong Bear"
-    if macd < 0 and hist < 0:                     return "Bear"
-    if macd < 0 and hist > 0:                     return "Weakening Bear"
-    return "Neutral"
-
-# ── ADX ───────────────────────────────────────────────────────────────────────
-def calc_adx(high, low, close, period=14):
-    tr   = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
-    atr  = tr.rolling(period).mean()
-    dmp  = (high.diff().clip(lower=0))
-    dmn  = (-low.diff().clip(upper=0))
-    dmp[dmp < dmn] = 0
-    dmn[dmn < dmp] = 0
-    dip  = 100 * dmp.rolling(period).mean() / atr.replace(0, np.nan)
-    din  = 100 * dmn.rolling(period).mean() / atr.replace(0, np.nan)
-    dx   = 100 * (dip - din).abs() / (dip + din).replace(0, np.nan)
-    adx  = dx.rolling(period).mean()
-    return float(adx.iloc[-1]), float(dip.iloc[-1]), float(din.iloc[-1])
-
-def adx_judgment(adx, dip, din):
-    if adx is None: return "N/A"
-    if adx >= 50 and dip > din:   return "Extreme Up"
-    if adx >= 40 and dip > din:   return "Very Strong Up"
-    if adx >= 30 and dip > din:   return "Strong Up"
-    if adx >= 20 and dip > din:   return "Trending Up"
-    if adx < 20:                   return "No Trend"
-    if adx >= 20 and din > dip:    return "Trending Down"
-    if adx >= 30 and din > dip:    return "Strong Down"
-    if adx >= 40 and din > dip:    return "Very Strong Down"
-    return "Extreme Down"
-
-# ── Bollinger ─────────────────────────────────────────────────────────────────
-def calc_bb(close: pd.Series, period=20, std=2):
-    mid   = close.rolling(period).mean()
-    sigma = close.rolling(period).std()
-    upper = mid + std * sigma
-    lower = mid - std * sigma
-    pct_b = (close - lower) / (upper - lower).replace(0, np.nan)
-    return float(upper.iloc[-1]), float(mid.iloc[-1]), float(lower.iloc[-1]), float(pct_b.iloc[-1])
-
-def bb_judgment(pct_b):
-    if pct_b is None: return "N/A"
-    if pct_b >= 1.2:  return "Super Upper"
-    if pct_b >= 1.0:  return "Extreme Upper"
-    if pct_b >= 0.9:  return "Strong Upper"
-    if pct_b >= 0.8:  return "Upper Break"
-    if pct_b >= 0.5:  return "Above Mid"
-    if pct_b >= 0.4:  return "In Bands"
-    if pct_b >= 0.2:  return "Below Mid"
-    if pct_b >= 0.1:  return "Lower Break"
-    if pct_b >= 0.0:  return "Strong Lower"
-    return "Extreme Lower"
-
-# ── EMA50 ─────────────────────────────────────────────────────────────────────
-def calc_ema50(close: pd.Series):
-    ema = close.ewm(span=50, adjust=False).mean()
-    pct = (float(close.iloc[-1]) - float(ema.iloc[-1])) / float(ema.iloc[-1]) * 100
-    return float(ema.iloc[-1]), round(pct, 2)
-
-def ema50_judgment(pct):
-    if pct is None: return "N/A"
-    if pct >= 15:   return "Super Up"
-    if pct >= 8:    return "Very Strong Up"
-    if pct >= 4:    return "Strong Up"
-    if pct >= 2:    return "Mod Up"
-    if pct >= 0.5:  return "Uptrend"
-    if pct >= -0.5: return "Consolidating"
-    if pct >= -2:   return "Downtrend"
-    if pct >= -4:   return "Mod Down"
-    if pct >= -8:   return "Strong Down"
-    if pct >= -15:  return "Very Strong Down"
-    return "Super Down"
-
-# ── VWAP ──────────────────────────────────────────────────────────────────────
-def calc_vwap(high, low, close, volume):
-    typical = (high + low + close) / 3
-    vwap    = (typical * volume).cumsum() / volume.cumsum()
-    pct     = (float(close.iloc[-1]) - float(vwap.iloc[-1])) / float(vwap.iloc[-1]) * 100
-    return float(vwap.iloc[-1]), round(pct, 2)
-
-def vwap_judgment(pct):
-    if pct is None: return "N/A"
-    if pct >= 5:    return "Extreme Over"
-    if pct >= 3:    return "Far Over"
-    if pct >= 2:    return "Strong Over"
-    if pct >= 1:    return "Over"
-    if pct >= 0.2:  return "Slightly Over"
-    if pct >= -0.2: return "Near"
-    if pct >= -1:   return "Slightly Under"
-    if pct >= -2:   return "Under"
-    if pct >= -3:   return "Strong Under"
-    if pct >= -5:   return "Far Under"
-    return "Extreme Under"
-
-# ── Score ─────────────────────────────────────────────────────────────────────
-SCORE_MAP = {
     # RSI
-    "Extreme Overbought": 1, "Overbought": 2, "Strong Up": 3, "Mod Up": 4,
-    "Slightly Up": 5, "Neutral": 6, "Slightly Down": 7, "Mod Down": 8,
-    "Oversold": 9, "Extreme Oversold": 11,
+    rsi_v = calc_rsi(c)
+    rsi_l, rsi_s = rsi_label(rsi_v)
+    row["rsi"] = {"v": rsi_v, "l": rsi_l}
+    scores.append(rsi_s)
+
     # MACD
-    "Strong Bull": 1, "Bull": 3, "Weakening Bull": 4,
-    "Weakening Bear": 7, "Bear": 9, "Strong Bear": 11,
+    m, sig, hst = calc_macd(c)
+    mac_l, mac_s = macd_label(m, sig, hst)
+    row["macd"] = {"v": round(m,4) if m else None, "l": mac_l}
+    scores.append(mac_s)
+
     # ADX
-    "Extreme Up": 1, "Very Strong Up": 2, "Trending Up": 5, "No Trend": 6,
-    "Trending Down": 7, "Strong Down": 9, "Very Strong Down": 10, "Extreme Down": 11,
-    # BB
-    "Super Upper": 1, "Extreme Upper": 2, "Upper Break": 4, "Above Mid": 5,
-    "In Bands": 6, "Below Mid": 7, "Lower Break": 8, "Strong Lower": 9, "Extreme Lower": 11,
+    adx_v, dip, din = calc_adx(h, l, c)
+    adx_l, adx_s = adx_label(adx_v, dip, din)
+    row["adx"] = {"v": adx_v, "l": adx_l}
+    scores.append(adx_s)
+
+    # Bollinger
+    bu, bm, bl, pb = calc_bb(c)
+    bb_l, bb_s = bb_label(pb)
+    row["bb"] = {"v": round(pb,3) if pb else None, "l": bb_l}
+    scores.append(bb_s)
+
     # EMA50
-    "Super Up": 1, "Very Strong Up": 2, "Uptrend": 5, "Consolidating": 6,
-    "Downtrend": 7, "Super Down": 11,
+    ema50 = calc_ema(c, 50)
+    if ema50 and c[-1]:
+        ema_pct = (c[-1] - ema50) / ema50 * 100
+        ema_l, ema_s = ema50_label(ema_pct)
+        row["ema50"] = {"v": f"{ema_pct:+.2f}%", "l": ema_l}
+        scores.append(ema_s)
+    else:
+        row["ema50"] = {"v": None, "l": "N/A"}
+        scores.append(6)
+
     # VWAP
-    "Extreme Over": 1, "Far Over": 2, "Strong Over": 3, "Over": 4,
-    "Slightly Over": 5, "Near": 6, "Slightly Under": 7, "Under": 8,
-    "Strong Under": 9, "Far Under": 10, "Extreme Under": 11,
-}
+    vwap_v, vwap_pct = calc_vwap(h, l, c, v)
+    vwap_l, vwap_s = vwap_label(vwap_pct)
+    row["vwap"] = {"v": f"{vwap_pct:+.2f}%" if vwap_pct else None, "l": vwap_l}
+    scores.append(vwap_s)
 
-def score_to_label(avg):
-    if avg <= 2:   return ("Strong Bull 🟢", "bull-strong")
-    if avg <= 4:   return ("Bull 🟢", "bull")
-    if avg <= 5.5: return ("Slightly Bull 🟡", "bull-weak")
-    if avg <= 6.5: return ("Neutral ⚪", "neutral")
-    if avg <= 8:   return ("Slightly Bear 🟠", "bear-weak")
-    if avg <= 9:   return ("Bear 🔴", "bear")
-    return ("Strong Bear 🔴", "bear-strong")
+    avg = sum(scores) / len(scores)
+    sig_l, sig_css = score_to_signal(avg)
+    row["result"] = {"l": sig_l, "css": sig_css, "score": round(avg,2)}
+    return row
 
-# ── Main function ─────────────────────────────────────────────────────────────
-def analyze_symbol(symbol: str, timeframes=None) -> dict:
-    """
-    Run full Analyzer Pro analysis on a symbol.
-    Returns a dict with results per timeframe + overall score.
-    """
+
+def analyze_symbol(symbol: str, timeframes: list = None) -> dict:
+    """Full Analyzer Pro for one symbol across multiple timeframes."""
     if timeframes is None:
         timeframes = ["15m", "1h", "1D"]
 
-    results = {}
-    overall_scores = []
+    try:
+        from core.data_engine import get_chart, get_quote
+    except ImportError:
+        return {"symbol": symbol, "error": "data engine unavailable", "timeframes": {}}
+
+    # Get current price
+    quote = get_quote(symbol)
+    price = quote["price"] if quote else None
+
+    tf_results = {}
+    all_scores  = []
 
     for tf in timeframes:
-        if tf not in TIMEFRAMES:
+        if tf not in INTERVAL_MAP:
+            tf_results[tf] = {"error": "unknown timeframe"}
             continue
-        cfg = TIMEFRAMES[tf]
-        try:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(period=cfg["period"], interval=cfg["interval"])
-            if df.empty or len(df) < 30:
-                results[tf] = {"error": "Not enough data"}
-                continue
+        interval, period = INTERVAL_MAP[tf]
+        chart = get_chart(symbol, interval, period)
+        if not chart:
+            tf_results[tf] = {"error": "no data from Yahoo Finance"}
+            continue
+        result = analyze_one_tf(chart)
+        tf_results[tf] = result
+        if "result" in result:
+            all_scores.append(result["result"]["score"])
 
-            close  = df["Close"]
-            high   = df["High"]
-            low    = df["Low"]
-            volume = df["Volume"]
-
-            row = {}
-            scores = []
-
-            # RSI
-            rsi_val = calc_rsi(close)
-            rsi_j   = rsi_judgment(rsi_val)
-            row["RSI"] = {"value": rsi_val, "label": rsi_j, "score": SCORE_MAP.get(rsi_j, 6)}
-            scores.append(SCORE_MAP.get(rsi_j, 6))
-
-            # MACD
-            m, s, h = calc_macd(close)
-            macd_j  = macd_judgment(m, s, h)
-            row["MACD"] = {"value": round(m, 4), "label": macd_j, "score": SCORE_MAP.get(macd_j, 6)}
-            scores.append(SCORE_MAP.get(macd_j, 6))
-
-            # ADX
-            adx_v, dip, din = calc_adx(high, low, close)
-            adx_j = adx_judgment(adx_v, dip, din)
-            row["ADX"] = {"value": round(adx_v, 1), "label": adx_j, "score": SCORE_MAP.get(adx_j, 6)}
-            scores.append(SCORE_MAP.get(adx_j, 6))
-
-            # Bollinger
-            bu, bm, bl, pb = calc_bb(close)
-            bb_j = bb_judgment(pb)
-            row["Bollinger"] = {"value": round(pb, 3), "label": bb_j, "score": SCORE_MAP.get(bb_j, 6)}
-            scores.append(SCORE_MAP.get(bb_j, 6))
-
-            # EMA50
-            ema_v, ema_pct = calc_ema50(close)
-            ema_j = ema50_judgment(ema_pct)
-            row["EMA50"] = {"value": f"{ema_pct:+.2f}%", "label": ema_j, "score": SCORE_MAP.get(ema_j, 6)}
-            scores.append(SCORE_MAP.get(ema_j, 6))
-
-            # VWAP
-            vw_v, vw_pct = calc_vwap(high, low, close, volume)
-            vwap_j = vwap_judgment(vw_pct)
-            row["VWAP"] = {"value": f"{vw_pct:+.2f}%", "label": vwap_j, "score": SCORE_MAP.get(vwap_j, 6)}
-            scores.append(SCORE_MAP.get(vwap_j, 6))
-
-            avg = sum(scores) / len(scores)
-            label, css = score_to_label(avg)
-            row["_result"] = {"score": round(avg, 2), "label": label, "css": css}
-
-            results[tf] = row
-            overall_scores.extend(scores)
-
-        except Exception as e:
-            logger.warning(f"analyze_symbol {symbol} {tf}: {e}")
-            results[tf] = {"error": str(e)}
-
-    overall_avg   = sum(overall_scores) / len(overall_scores) if overall_scores else 6.0
-    overall_label, overall_css = score_to_label(overall_avg)
-
-    current_price = None
-    try:
-        t = yf.Ticker(symbol)
-        info = t.fast_info
-        current_price = round(float(info.last_price), 2)
-    except:
-        pass
+    overall_avg = sum(all_scores)/len(all_scores) if all_scores else 6.0
+    overall_l, overall_css = score_to_signal(overall_avg)
 
     return {
-        "symbol":        symbol,
-        "price":         current_price,
-        "timeframes":    results,
+        "symbol":        symbol.upper(),
+        "price":         price,
+        "timeframes":    tf_results,
         "overall_score": round(overall_avg, 2),
-        "overall_label": overall_label,
+        "overall_label": overall_l,
         "overall_css":   overall_css,
     }
+
+
+def analyze_multiple(symbols: list, timeframes: list = None) -> list:
+    """Analyze multiple symbols."""
+    results = []
+    for sym in symbols:
+        try:
+            r = analyze_symbol(sym.upper().strip(), timeframes)
+            results.append(r)
+        except Exception as e:
+            results.append({"symbol": sym.upper(), "error": str(e), "timeframes": {}})
+    return results

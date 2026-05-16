@@ -1,123 +1,80 @@
 """
-research/sec_filings.py — Institutional footprint tracker
-Pulls 13F filings from SEC EDGAR for major funds
+research/sec_filings.py — Institutional 13F tracker via SEC EDGAR (free)
 """
-import requests
-import json
+import requests, time
+from core.data_engine import FUNDS, get_13f_filing, get_13f_holdings, get_quote
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-HEADERS = {"User-Agent": "TradingBot research@tradingbot.com"}
-
-FUNDS = {
-    "Berkshire Hathaway": "0001067983",
-    "Bridgewater Associates": "0001350694",
-    "Renaissance Technologies": "0001037389",
-    "Citadel": "0001423689",
-    "Two Sigma": "0001448942",
+# Map CUSIP prefixes to approximate tickers (limited, most holdings need CUSIP lookup)
+CUSIP_HINTS = {
+    "037833100":"AAPL","594918104":"MSFT","023135106":"AMZN","30303M102":"META",
+    "02079K305":"GOOGL","88160R101":"TSLA","67066G104":"NVDA","46625H100":"JPM",
+    "70450Y103":"PYPL","025816109":"AMD","92826C839":"V",  "14040H105":"CAP",
+    "58933Y105":"MET", "713448108":"PFE","532457108":"ELI","084670702":"BRK-B",
 }
 
-def get_latest_13f(cik: str, fund_name: str) -> dict:
-    """Fetch latest 13F filing for a given CIK."""
-    try:
-        url = f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-
-        filings = data.get("filings", {}).get("recent", {})
-        forms   = filings.get("form", [])
-        accNums = filings.get("accessionNumber", [])
-        dates   = filings.get("filingDate", [])
-
-        # Find latest 13F-HR
-        for i, form in enumerate(forms):
-            if form == "13F-HR":
-                acc = accNums[i].replace("-", "")
-                return {
-                    "fund":      fund_name,
-                    "cik":       cik,
-                    "accession": accNums[i],
-                    "date":      dates[i],
-                    "url":       f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc}/",
-                }
-        return {"fund": fund_name, "error": "No 13F-HR found"}
-    except Exception as e:
-        logger.warning(f"SEC fetch error for {fund_name}: {e}")
-        return {"fund": fund_name, "error": str(e)}
-
-
-def get_13f_holdings(cik: str, accession: str) -> list:
-    """Parse holdings from 13F filing index."""
-    try:
-        acc_clean = accession.replace("-", "")
-        idx_url   = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_clean}/{accession}-index.json"
-        resp      = requests.get(idx_url, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        idx_data  = resp.json()
-
-        # Find the primary document (infotable xml or primary doc)
-        files = idx_data.get("directory", {}).get("item", [])
-        xml_file = None
-        for f in files:
-            name = f.get("name", "").lower()
-            if "infotable" in name and name.endswith(".xml"):
-                xml_file = f["name"]
-                break
-            if name.endswith(".xml") and "primary" not in name and "form13f" not in name:
-                xml_file = f["name"]
-
-        if not xml_file:
-            return []
-
-        xml_url  = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_clean}/{xml_file}"
-        xml_resp = requests.get(xml_url, headers=HEADERS, timeout=20)
-        xml_resp.raise_for_status()
-
-        # Simple XML parse for holdings
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(xml_resp.text)
-        ns   = {"ns": "http://www.sec.gov/edgar/document/thirteenf/informationtable"}
-
-        holdings = []
-        for info in root.findall(".//ns:infoTable", ns) or root.findall(".//infoTable"):
-            try:
-                ns_tag = lambda tag: info.find(f"ns:{tag}", ns) or info.find(tag)
-                name_el  = ns_tag("nameOfIssuer")
-                val_el   = ns_tag("value")
-                shrte_el = ns_tag("sshPrnamt")
-                ticker_el= ns_tag("cusip")
-
-                holdings.append({
-                    "name":   name_el.text.strip()  if name_el  else "",
-                    "value":  int(val_el.text)       if val_el   else 0,
-                    "shares": int(shrte_el.text)     if shrte_el else 0,
-                    "cusip":  ticker_el.text.strip() if ticker_el else "",
-                })
-            except:
-                continue
-        return sorted(holdings, key=lambda x: x["value"], reverse=True)[:30]
-    except Exception as e:
-        logger.warning(f"Holdings parse error: {e}")
-        return []
-
+def enrich_holdings(holdings: list) -> list:
+    """Try to add ticker/price to holdings."""
+    enriched = []
+    for h in holdings[:20]:
+        cusip  = h.get("cusip","")
+        ticker = CUSIP_HINTS.get(cusip)
+        price  = None
+        if ticker:
+            q = get_quote(ticker)
+            if q:
+                price = q.get("price")
+            time.sleep(0.05)
+        enriched.append({**h, "ticker": ticker, "current_price": price})
+    return enriched
 
 def get_institutional_tracker() -> dict:
     """
-    Main function — returns data for all 5 funds.
-    Returns latest filing info + top holdings per fund.
+    Fetch latest 13F for all 5 funds.
+    Returns filing metadata + top holdings.
     """
     results = {}
     for fund_name, cik in FUNDS.items():
         logger.info(f"Fetching 13F for {fund_name}...")
-        filing = get_latest_13f(cik, fund_name)
-        if "error" not in filing:
+        filing = get_13f_filing(cik, fund_name)
+        if filing.get("found"):
+            time.sleep(0.5)
             holdings = get_13f_holdings(cik, filing["accession"])
-            filing["top_holdings"] = holdings[:10]
-            filing["total_holdings"] = len(holdings)
+            filing["top_holdings"]    = enrich_holdings(holdings)
+            filing["total_holdings"]  = len(holdings)
+            filing["total_value_bn"]  = round(sum(h["value"] for h in holdings) / 1_000_000, 2)
         else:
-            filing["top_holdings"] = []
+            filing["top_holdings"]   = []
+            filing["total_holdings"] = 0
+            filing["total_value_bn"] = 0
         results[fund_name] = filing
-
+        time.sleep(0.3)
     return results
+
+def analyze_institutional_momentum(all_filings: dict) -> list:
+    """
+    Cross-reference holdings across funds to find stocks where
+    institutional buying has accelerated but retail attention is still low.
+    Returns top 5 conviction stocks.
+    """
+    stock_mentions = {}
+    for fund_name, filing in all_filings.items():
+        for h in filing.get("top_holdings", [])[:20]:
+            name = h.get("name","")
+            if not name:
+                continue
+            if name not in stock_mentions:
+                stock_mentions[name] = {
+                    "name": name, "ticker": h.get("ticker"),
+                    "funds": [], "total_value": 0, "total_shares": 0,
+                }
+            stock_mentions[name]["funds"].append(fund_name)
+            stock_mentions[name]["total_value"]  += h.get("value",0)
+            stock_mentions[name]["total_shares"] += h.get("shares",0)
+
+    # Filter: held by 2+ funds, rank by total value
+    multi_fund = [v for v in stock_mentions.values() if len(v["funds"]) >= 2]
+    multi_fund.sort(key=lambda x: x["total_value"], reverse=True)
+    return multi_fund[:10]

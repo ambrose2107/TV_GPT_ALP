@@ -4,1007 +4,1110 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>OptiTrade Bot</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px}
-header{background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
-header h1{font-size:1rem;display:flex;align-items:center;gap:8px}
-.badge{background:#238636;padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700}
-.badge.paper{background:#9e6a03}
-nav a{color:#8b949e;text-decoration:none;margin-left:14px;font-size:.85rem}
-nav a:hover{color:#e6edf3}
-.dot{width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px;animation:pulse 2s infinite}
+body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
+a{color:#58a6ff;text-decoration:none}
+code{font-family:monospace;background:#161b22;padding:2px 6px;border-radius:4px;font-size:11px}
+
+/* HEADER */
+.hdr{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hdr h1{font-size:14px;display:flex;align-items:center;gap:8px}
+.badge{font-size:10px;padding:2px 7px;border-radius:20px;background:#9e6a03;color:#fff;font-weight:600}
+.live{display:flex;align-items:center;gap:5px;font-size:12px;color:#8b949e}
+.dot{width:6px;height:6px;border-radius:50%;background:#3fb950;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+nav a{color:#8b949e;margin-left:14px;font-size:12px}
 
 /* TABS */
-.tabs{background:#161b22;border-bottom:1px solid #30363d;display:flex;overflow-x:auto;padding:0 16px}
-.tab{padding:12px 18px;cursor:pointer;color:#8b949e;font-size:.85rem;border-bottom:2px solid transparent;white-space:nowrap;transition:.2s}
+.tabs{display:flex;overflow-x:auto;background:#161b22;border-bottom:1px solid #30363d;padding:0 14px}
+.tab{padding:10px 16px;cursor:pointer;font-size:12px;color:#8b949e;border-bottom:2px solid transparent;white-space:nowrap;user-select:none;transition:.15s}
 .tab:hover{color:#e6edf3}
-.tab.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.tab.on{color:#58a6ff;border-bottom-color:#58a6ff}
+.sub-tabs{display:flex;border-bottom:1px solid #21262d;margin-bottom:14px}
+.stab{padding:7px 14px;font-size:11px;cursor:pointer;color:#8b949e;border-bottom:2px solid transparent;user-select:none}
+.stab:hover{color:#e6edf3}
+.stab.on{color:#58a6ff;border-bottom-color:#58a6ff}
 
-.tab-content{display:none;padding:20px;max-width:1400px;margin:0 auto}
-.tab-content.active{display:block}
+/* PANES */
+.pane{display:none;padding:16px;max-width:1400px;margin:0 auto}
+.pane.on{display:block}
 
 /* CARDS */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px}
-.card h3{color:#8b949e;font-size:.72rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
-.card .val{font-size:1.5rem;font-weight:700}
-.green{color:#3fb950}.red{color:#f85149}.yellow{color:#d29922}.blue{color:#58a6ff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px}
+.card .lbl{font-size:11px;color:#8b949e;margin-bottom:5px}
+.card .val{font-size:20px;font-weight:600}
 
-/* SECTIONS */
-.section{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;margin-bottom:16px}
-.section h2{font-size:.95rem;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.section h2 span{font-size:.8rem;color:#8b949e;font-weight:400}
+/* COLORS */
+.g{color:#3fb950}.r{color:#f85149}.b{color:#58a6ff}.y{color:#d29922}
+
+/* SECTION */
+.sec{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;margin-bottom:14px}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{font-size:13px;font-weight:500}
+.sec-hdr .sub{font-size:11px;color:#8b949e}
 
 /* TABLE */
-table{width:100%;border-collapse:collapse;font-size:.83rem}
-th{text-align:left;padding:8px 10px;color:#8b949e;font-weight:500;border-bottom:1px solid #30363d}
-td{padding:9px 10px;border-bottom:1px solid #21262d}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:7px 9px;color:#8b949e;font-weight:400;border-bottom:1px solid #30363d}
+td{padding:8px 9px;border-bottom:1px solid #21262d;vertical-align:middle}
 tr:last-child td{border-bottom:none}
-.buy{color:#3fb950;font-weight:600}.sell{color:#f85149;font-weight:600}.close{color:#d29922;font-weight:600}
 
 /* TAGS */
-.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:.72rem;font-weight:600}
-.tag-placed,.tag-success{background:#23863633;color:#3fb950}
-.tag-failed,.tag-error,.tag-rejected{background:#da363333;color:#f85149}
-.tag-received{background:#1f6feb33;color:#58a6ff}
+.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600}
+.tg{background:#1a3a1a;color:#3fb950}
+.tr{background:#3a1a1a;color:#f85149}
+.tb{background:#1a2a3a;color:#58a6ff}
+.ty{background:#3a2a0a;color:#d29922}
+.tn{background:#21262d;color:#8b949e}
 
 /* BUTTONS */
-.btn{padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:.82rem;font-weight:600;transition:.2s}
-.btn:hover{opacity:.8}.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-red{background:#da3633;color:#fff}
-.btn-green{background:#238636;color:#fff}
-.btn-blue{background:#1f6feb;color:#fff}
-.btn-yellow{background:#9e6a03;color:#fff}
-.btn-gray{background:#30363d;color:#e6edf3}
-.btn-sm{padding:4px 10px;font-size:.75rem}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.btn{padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:.15s}
+.btn:hover{opacity:.8}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-g{background:#238636;color:#fff}
+.btn-r{background:#da3633;color:#fff}
+.btn-b{background:#1f6feb;color:#fff}
+.btn-y{background:#9e6a03;color:#fff}
+.btn-n{background:#30363d;color:#e6edf3}
+.btn-s{padding:4px 10px;font-size:11px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 
-/* WEBHOOK URL */
-.webhook-url{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:.82rem;color:#58a6ff;word-break:break-all;margin-bottom:8px}
-
-/* ANALYZER GRID */
-.indicator-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.stock-card{background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:14px}
-.stock-card h3{font-size:.95rem;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
-.tf-table{width:100%;font-size:.75rem;border-collapse:collapse}
-.tf-table th{padding:4px 6px;background:#161b22;color:#8b949e;text-align:center}
-.tf-table td{padding:4px 6px;text-align:center;border-radius:3px}
-
-/* SIGNAL COLORS */
-.bull-strong{background:#1a4d2e;color:#3fb950}
-.bull{background:#1e3a28;color:#56d364}
-.bull-weak{background:#2d3b20;color:#8ddb90}
-.neutral{background:#2d2d2d;color:#aaa}
-.bear-weak{background:#3b2d1a;color:#d4a01a}
-.bear{background:#3d2020;color:#f85149}
-.bear-strong{background:#4d1a1a;color:#ff7b72}
-
-/* RESEARCH CARDS */
-.research-card{background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:12px}
-.research-card h3{font-size:.9rem;margin-bottom:8px;color:#58a6ff}
-.fund-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.72rem;background:#1f6feb22;color:#58a6ff;margin-bottom:6px}
-.holding-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #21262d;font-size:.8rem}
-.asymmetric{border:1px solid #d29922;background:#1f1a0d}
-.asymmetric h3{color:#d29922}
-
-/* SEARCH BAR */
-.search-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-.search-row input{flex:1;min-width:180px;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:.85rem}
-.search-row input:focus{outline:none;border-color:#58a6ff}
-.search-row select{padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:.82rem}
-
-/* CLOSE MODAL */
-.modal{display:none;position:fixed;inset:0;background:#000000aa;z-index:200;align-items:center;justify-content:center}
-.modal.open{display:flex}
-.modal-box{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;width:360px;max-width:95vw}
-.modal-box h3{margin-bottom:16px;font-size:1rem}
-.modal-box input{width:100%;padding:9px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:.9rem;margin-bottom:12px}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+/* INPUTS */
+input[type=text],input[type=number],input[type=password]{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 11px;font-size:12px}
+input:focus{outline:none;border-color:#58a6ff}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.row input[type=text]{flex:1;min-width:180px}
+select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px;font-size:12px}
 
 /* SPINNER */
-.spinner{display:inline-block;width:14px;height:14px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-overlay{text-align:center;padding:40px;color:#8b949e}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:_sp .7s linear infinite;vertical-align:middle}
+@keyframes _sp{to{transform:rotate(360deg)}}
+.loading{text-align:center;padding:30px;color:#8b949e}
 
-/* SCROLLBAR */
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:#0d1117}
-::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+/* WEBHOOK URL */
+.wh-url{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:11px;color:#58a6ff;word-break:break-all}
 
-/* PNL SUMMARY */
-.pnl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+/* ANALYZER GRID */
+.ana-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.ana-card{background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:13px}
+.ana-card h3{font-size:13px;font-weight:500;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px}
+.itable{width:100%;border-collapse:collapse;font-size:11px}
+.itable th{padding:4px 5px;background:#161b22;color:#8b949e;font-weight:400;text-align:center}
+.itable td{padding:4px 5px;text-align:center;border-radius:3px}
+
+/* SIGNAL COLORS */
+.bull2{background:#0d4429;color:#56d364}
+.bull1{background:#1a3d23;color:#3fb950}
+.bln  {background:#2d3b20;color:#8ddb90}
+.neut {background:#21262d;color:#8b949e}
+.brn  {background:#3d2b0a;color:#d4a01a}
+.bear1{background:#3d1a1a;color:#f85149}
+.bear2{background:#4d0a0a;color:#ff7b72}
+
+/* CHARTS */
+.chart-wrap{position:relative;height:220px;margin-top:10px}
+.cmp-wrap{position:relative;height:280px}
+.sect-wrap{position:relative;height:280px}
+
+/* RESEARCH */
+.res-card{background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:13px;margin-bottom:10px}
+.res-card h3{font-size:12px;font-weight:500;color:#58a6ff;margin-bottom:8px}
+.fund-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;background:#1f6feb22;color:#58a6ff;margin-bottom:6px}
+.hold-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e}
+.hold-row:last-child{border:none}
+.asym{border-color:#d29922}
+.asym h3{color:#d29922}
+.sect-bar{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.bar-lbl{font-size:11px;color:#8b949e;min-width:110px;text-align:right}
+.bar-track{flex:1;height:7px;background:#21262d;border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px}
+.bar-val{font-size:11px;min-width:45px}
+
+/* MODAL */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-box{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:22px;width:340px;max-width:95vw}
+.modal-box h3{font-size:14px;margin-bottom:12px}
+.modal-box input{width:100%;margin-bottom:12px}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+
+/* PNL GRID */
+.pnl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
 .pnl-card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;text-align:center}
-.pnl-card .label{font-size:.72rem;color:#8b949e;margin-bottom:4px}
-.pnl-card .number{font-size:1.2rem;font-weight:700}
+.pnl-card .pl{font-size:11px;color:#8b949e;margin-bottom:3px}
+.pnl-card .pv{font-size:18px;font-weight:600}
 
-/* SECTOR BAR */
-.sector-bar-container{margin-bottom:6px}
-.sector-name{font-size:.78rem;color:#8b949e;margin-bottom:2px;display:flex;justify-content:space-between}
-.bar{height:8px;border-radius:4px;background:#238636;transition:.5s}
-.bar.neg{background:#da3633}
-
-/* TABS responsive */
-@media(max-width:600px){
-  .tab{padding:10px 12px;font-size:.78rem}
-  .grid{grid-template-columns:1fr 1fr}
-}
+/* LEGEND */
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;margin-top:8px}
+.legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>📈 OptiTrade Bot <span class="badge paper" id="mode-badge">PAPER</span></h1>
-  <nav>
-    <span><span class="dot"></span>Live</span>
-    <a href="/logout">Logout</a>
-  </nav>
-</header>
-
-<!-- TABS -->
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('dashboard')">🏠 Dashboard</div>
-  <div class="tab" onclick="switchTab('positions')">📊 Positions</div>
-  <div class="tab" onclick="switchTab('history')">📋 History</div>
-  <div class="tab" onclick="switchTab('analyzer')">🔬 Analyzer Pro</div>
-  <div class="tab" onclick="switchTab('research')">🧠 Research</div>
-  <div class="tab" onclick="switchTab('settings')">⚙️ Settings</div>
+<div class="hdr">
+  <h1>📈 OptiTrade Bot <span class="badge" id="mode-badge">PAPER</span></h1>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="live"><span class="dot"></span>Live</div>
+    <nav><a href="/logout">Logout</a></nav>
+  </div>
 </div>
 
-<!-- ═══════════════════════════════ DASHBOARD ════════════════════════════════ -->
-<div id="tab-dashboard" class="tab-content active">
+<div class="tabs" id="main-tabs">
+  <div class="tab on"  onclick="switchTab(0,'dash')">🏠 Dashboard</div>
+  <div class="tab"     onclick="switchTab(1,'pos')">📊 Positions</div>
+  <div class="tab"     onclick="switchTab(2,'hist')">📋 History</div>
+  <div class="tab"     onclick="switchTab(3,'ana')">🔬 Analyzer Pro</div>
+  <div class="tab"     onclick="switchTab(4,'res')">🧠 Research</div>
+  <div class="tab"     onclick="switchTab(5,'set')">⚙️ Settings</div>
+</div>
 
+<!-- ── DASHBOARD ─────────────────────────────────────────────────────────────── -->
+<div class="pane on" id="pane-dash">
   <div class="grid">
-    <div class="card"><h3>Portfolio Value</h3><div class="val" id="portfolio">—</div></div>
-    <div class="card"><h3>Buying Power</h3><div class="val" id="buying-power">—</div></div>
-    <div class="card"><h3>Today P&L</h3><div class="val" id="pnl-today">—</div></div>
-    <div class="card"><h3>Open Positions</h3><div class="val blue" id="open-count">—</div></div>
-    <div class="card"><h3>Total Trades</h3><div class="val" id="total-trades">—</div></div>
-    <div class="card"><h3>Win Rate</h3><div class="val green" id="win-rate">—</div></div>
+    <div class="card"><div class="lbl">Portfolio Value</div><div class="val" id="d-port">—</div></div>
+    <div class="card"><div class="lbl">Buying Power</div><div class="val" id="d-bp">—</div></div>
+    <div class="card"><div class="lbl">Today P&L</div><div class="val" id="d-pnl">—</div></div>
+    <div class="card"><div class="lbl">Open Positions</div><div class="val b" id="d-op">—</div></div>
+    <div class="card"><div class="lbl">Win Rate</div><div class="val g" id="d-wr">—</div></div>
+    <div class="card"><div class="lbl">Total Trades</div><div class="val" id="d-tt">—</div></div>
   </div>
-
   <div class="actions">
-    <button class="btn btn-red"    onclick="closeAll()">🚨 Close All Positions</button>
-    <button class="btn btn-yellow" onclick="toggleKillSwitch()" id="kill-btn">🔴 Kill Switch</button>
-    <button class="btn btn-green"  onclick="loadAll()">🔄 Refresh</button>
-    <button class="btn btn-blue"   onclick="exportExcel()">📥 Export Excel</button>
+    <button class="btn btn-r" onclick="closeAll()">🚨 Close All</button>
+    <button class="btn btn-y" onclick="toggleKill()" id="kill-btn">🔴 Kill Switch</button>
+    <button class="btn btn-g" onclick="loadAll()">🔄 Refresh</button>
+    <button class="btn btn-b" onclick="exportXL()">📥 Excel</button>
+    <button class="btn btn-n" onclick="testTg()">📱 Test Telegram</button>
   </div>
-
-  <div class="section">
-    <h2>🔗 TradingView Webhook URL</h2>
-    <div class="webhook-url" id="webhook-url">Loading...</div>
-    <p style="color:#8b949e;font-size:.8rem">Paste in TradingView → Alert → Notifications → Webhook URL</p>
+  <div class="sec">
+    <div class="sec-hdr"><h2>🔗 Webhook URL</h2></div>
+    <div class="wh-url" id="wh-url">Loading...</div>
+    <p style="font-size:11px;color:#8b949e;margin-top:6px">Paste in TradingView → Alert → Notifications → Webhook URL</p>
   </div>
-
-  <div class="section">
-    <h2>📡 Recent Signals <span>Last 20 webhooks</span></h2>
-    <div id="webhooks-table"><div class="loading-overlay"><span class="spinner"></span></div></div>
+  <div class="sec">
+    <div class="sec-hdr"><h2>📡 Recent Signals</h2><span class="sub">last 20</span></div>
+    <div id="wh-tbl"><div class="loading"><span class="spin"></span></div></div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════ POSITIONS ════════════════════════════════ -->
-<div id="tab-positions" class="tab-content">
-
+<!-- ── POSITIONS ──────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-pos">
   <div class="actions">
-    <button class="btn btn-red" onclick="closeAll()">🚨 Close All</button>
-    <button class="btn btn-green" onclick="loadPositions()">🔄 Refresh</button>
+    <button class="btn btn-r" onclick="closeAll()">🚨 Close All</button>
+    <button class="btn btn-g" onclick="loadPositions()">🔄 Refresh</button>
   </div>
-
-  <div class="section">
-    <h2>📊 Open Positions</h2>
-    <div id="positions-table"><div class="loading-overlay"><span class="spinner"></span></div></div>
+  <div class="sec">
+    <div class="sec-hdr"><h2>📊 Open Positions</h2></div>
+    <div id="pos-tbl"><div class="loading"><span class="spin"></span></div></div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════ HISTORY ══════════════════════════════════ -->
-<div id="tab-history" class="tab-content">
-
+<!-- ── HISTORY ────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-hist">
   <div class="actions">
-    <button class="btn btn-blue" onclick="exportExcel()">📥 Download Excel</button>
-    <button class="btn btn-green" onclick="loadHistory()">🔄 Refresh</button>
+    <button class="btn btn-b" onclick="exportXL()">📥 Download Excel</button>
+    <button class="btn btn-g" onclick="loadHistory()">🔄 Refresh</button>
   </div>
-
-  <!-- P&L Summary -->
-  <div class="section">
-    <h2>💰 P&L Summary</h2>
-    <div id="pnl-summary"><div class="loading-overlay"><span class="spinner"></span></div></div>
+  <div class="sec"><div class="sec-hdr"><h2>💰 P&L Summary</h2></div>
+    <div id="pnl-sum"><div class="loading"><span class="spin"></span></div></div>
   </div>
-
-  <!-- Closed Positions -->
-  <div class="section">
-    <h2>📁 Closed Positions <span>Profit & Loss booked</span></h2>
-    <div id="closed-table"><div class="loading-overlay"><span class="spinner"></span></div></div>
+  <div class="sec"><div class="sec-hdr"><h2>📁 Closed Positions</h2></div>
+    <div id="closed-tbl"><div class="loading"><span class="spin"></span></div></div>
   </div>
-
-  <!-- All Trades -->
-  <div class="section">
-    <h2>📋 All Trades <span>Signal log</span></h2>
-    <div id="trades-table"><div class="loading-overlay"><span class="spinner"></span></div></div>
+  <div class="sec"><div class="sec-hdr"><h2>📋 All Trades</h2></div>
+    <div id="trades-tbl"><div class="loading"><span class="spin"></span></div></div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════ ANALYZER PRO ═════════════════════════════ -->
-<div id="tab-analyzer" class="tab-content">
-
-  <div class="section">
-    <h2>🔬 Analyzer Pro — Multi-Stock Trend Scanner</h2>
-    <div class="search-row">
-      <input type="text" id="analyzer-symbols" placeholder="AAPL, TSLA, NVDA, MSFT (comma separated, max 10)" value="AAPL,TSLA,NVDA,MSFT,SPY">
-      <select id="analyzer-tf" multiple size="1" style="display:none">
-        <option value="15m" selected>15m</option>
-        <option value="1h" selected>1h</option>
-        <option value="1D" selected>1D</option>
-      </select>
-      <button class="btn btn-blue" onclick="runAnalyzer()" id="analyze-btn">🔬 Analyze</button>
+<!-- ── ANALYZER PRO ───────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-ana">
+  <div class="sec">
+    <div class="sec-hdr"><h2>🔬 Analyzer Pro — Real-time Technical Scanner</h2></div>
+    <div class="row">
+      <input type="text" id="ana-syms" placeholder="AAPL, TSLA, NVDA, MU, SPY (max 8)" value="AAPL,NVDA,TSLA,MU">
+      <button class="btn btn-b" onclick="runAna()" id="ana-btn">🔬 Analyze</button>
     </div>
-    <div style="margin-bottom:12px">
-      <label style="color:#8b949e;font-size:.8rem;margin-right:10px">Timeframes:</label>
-      <label style="margin-right:10px"><input type="checkbox" value="5m"  onchange="updateTF(this)"> 5m</label>
-      <label style="margin-right:10px"><input type="checkbox" value="15m" onchange="updateTF(this)" checked> 15m</label>
-      <label style="margin-right:10px"><input type="checkbox" value="1h"  onchange="updateTF(this)" checked> 1h</label>
-      <label style="margin-right:10px"><input type="checkbox" value="4h"  onchange="updateTF(this)"> 4h</label>
-      <label style="margin-right:10px"><input type="checkbox" value="1D"  onchange="updateTF(this)" checked> 1D</label>
-      <label style="margin-right:10px"><input type="checkbox" value="1W"  onchange="updateTF(this)"> 1W</label>
+    <div style="margin-bottom:12px;font-size:12px">
+      <span style="color:#8b949e;margin-right:8px">Timeframes:</span>
+      <label style="margin-right:10px"><input type="checkbox" id="tf5m">  5m</label>
+      <label style="margin-right:10px"><input type="checkbox" id="tf15m" checked> 15m</label>
+      <label style="margin-right:10px"><input type="checkbox" id="tf1h"  checked> 1h</label>
+      <label style="margin-right:10px"><input type="checkbox" id="tf4h">  4h</label>
+      <label style="margin-right:10px"><input type="checkbox" id="tf1D"  checked> 1D</label>
+      <label style="margin-right:10px"><input type="checkbox" id="tf1W">  1W</label>
     </div>
-    <div id="analyzer-results"><div style="color:#8b949e;padding:20px">Enter symbols above and click Analyze.</div></div>
-  </div>
-</div>
 
-<!-- ═══════════════════════════════ RESEARCH ═════════════════════════════════ -->
-<div id="tab-research" class="tab-content">
-  <div class="tabs" style="background:transparent;border-bottom:1px solid #30363d;padding:0;margin-bottom:16px">
-    <div class="tab active" onclick="switchResearch('institutional')" id="rtab-institutional">🏛 Institutional</div>
-    <div class="tab" onclick="switchResearch('earnings')" id="rtab-earnings">📊 Earnings Whiplash</div>
-    <div class="tab" onclick="switchResearch('sectors')" id="rtab-sectors">🔄 Sector Rotation</div>
-    <div class="tab" onclick="switchResearch('insider')" id="rtab-insider">🕵️ Insider + Options</div>
-  </div>
-
-  <!-- A: Institutional -->
-  <div id="research-institutional">
-    <div class="section">
-      <h2>🏛 Institutional Footprint Tracker <span>SEC 13F Filings — Top 5 Funds</span></h2>
-      <button class="btn btn-blue" onclick="loadInstitutional()" id="inst-btn">📡 Load 13F Data</button>
-      <div id="institutional-results" style="margin-top:14px"><div style="color:#8b949e;padding:10px">Click Load to fetch latest SEC 13F filings.</div></div>
+    <div class="sub-tabs">
+      <div class="stab on" onclick="anaSub('signals',0)">📊 Signal Grid</div>
+      <div class="stab"    onclick="anaSub('charts',1)">📈 Charts</div>
+      <div class="stab"    onclick="anaSub('compare',2)">⚖️ Compare</div>
     </div>
-  </div>
 
-  <!-- B: Earnings Whiplash -->
-  <div id="research-earnings" style="display:none">
-    <div class="section">
-      <h2>📊 Earnings Whiplash <span>Next 14 days — High HV vs Low IV setups</span></h2>
-      <button class="btn btn-blue" onclick="loadEarnings()" id="earn-btn">🔍 Scan Earnings</button>
-      <div id="earnings-results" style="margin-top:14px"><div style="color:#8b949e;padding:10px">Click Scan to find asymmetric earnings setups.</div></div>
-    </div>
-  </div>
+    <div id="ana-signals"><div style="color:#8b949e;padding:20px">Enter symbols and click Analyze.</div></div>
 
-  <!-- C: Sector Rotation -->
-  <div id="research-sectors" style="display:none">
-    <div class="section">
-      <h2>🔄 Sector Rotation Detector <span>30-day performance vs 1 year ago</span></h2>
-      <button class="btn btn-blue" onclick="loadSectors()" id="sec-btn">📈 Analyze Sectors</button>
-      <div id="sectors-results" style="margin-top:14px"><div style="color:#8b949e;padding:10px">Click Analyze to see sector rotation.</div></div>
-    </div>
-  </div>
-
-  <!-- D: Insider + Options -->
-  <div id="research-insider" style="display:none">
-    <div class="section">
-      <h2>🕵️ Insider + Options Confluence <span>Where smart money aligns</span></h2>
-      <div class="search-row">
-        <input type="text" id="insider-symbols" placeholder="AAPL,MSFT,NVDA,TSLA,AMD (optional — leave blank for default list)">
-        <button class="btn btn-blue" onclick="loadInsider()" id="insider-btn">🔍 Scan Confluence</button>
+    <div id="ana-charts" style="display:none">
+      <div class="row" style="margin-bottom:10px">
+        <select id="chart-period"><option value="1mo">1 Month</option><option value="3mo" selected>3 Months</option><option value="6mo">6 Months</option><option value="1y">1 Year</option></select>
+        <button class="btn btn-b" onclick="loadCharts()">Load Charts</button>
       </div>
-      <div id="insider-results" style="margin-top:14px"><div style="color:#8b949e;padding:10px">Click Scan to find insider + options confluence.</div></div>
+      <div id="charts-wrap"></div>
+    </div>
+
+    <div id="ana-compare" style="display:none">
+      <div class="row">
+        <input type="text" id="cmp-syms" placeholder="AAPL,MSFT,NVDA,TSLA" value="AAPL,MSFT,NVDA">
+        <select id="cmp-period"><option value="1mo">1M</option><option value="3mo" selected>3M</option><option value="6mo">6M</option><option value="1y">1Y</option></select>
+        <button class="btn btn-b" onclick="runCompare()">Compare</button>
+      </div>
+      <div class="cmp-wrap"><canvas id="cmp-chart" aria-label="Performance comparison chart"></canvas></div>
+      <div class="legend" id="cmp-legend"></div>
     </div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════ SETTINGS ═════════════════════════════════ -->
-<div id="tab-settings" class="tab-content">
-  <div class="grid" style="max-width:700px">
-    <div class="card">
-      <h3>Telegram</h3>
-      <div class="val" id="tg-status" style="font-size:1rem;margin-bottom:10px">—</div>
-      <button class="btn btn-blue btn-sm" onclick="testTelegram()">Test Telegram</button>
-    </div>
-    <div class="card">
-      <h3>Kill Switch</h3>
-      <div class="val" id="ks-status" style="font-size:1rem;margin-bottom:10px">OFF</div>
-      <button class="btn btn-yellow btn-sm" onclick="toggleKillSwitch()">Toggle</button>
+<!-- ── RESEARCH ───────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-res">
+  <div class="sub-tabs">
+    <div class="stab on" onclick="resSub('inst',0)">🏛 13F Institutional</div>
+    <div class="stab"    onclick="resSub('earn',1)">📊 Earnings Whiplash</div>
+    <div class="stab"    onclick="resSub('sect',2)">🔄 Sector Rotation</div>
+    <div class="stab"    onclick="resSub('ins',3)">🕵 Insider+Options</div>
+  </div>
+
+  <!-- A: INSTITUTIONAL -->
+  <div id="res-inst">
+    <div class="sec">
+      <div class="sec-hdr"><h2>🏛 Institutional Footprint — Top 5 Funds</h2>
+        <button class="btn btn-b" onclick="loadInst()" id="inst-btn">📡 Load 13F Data</button>
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin-bottom:12px">
+        Live SEC EDGAR 13F filings: Berkshire Hathaway, Bridgewater, Renaissance, Citadel, Two Sigma.
+        Identifies top holdings + stocks with accelerating institutional accumulation.
+      </p>
+      <div id="inst-out"></div>
     </div>
   </div>
 
-  <div class="section" style="max-width:700px">
-    <h2>⚙️ Environment Variables</h2>
-    <p style="color:#8b949e;font-size:.85rem;margin-bottom:10px">These are set in Railway → Variables (never in code).</p>
+  <!-- B: EARNINGS -->
+  <div id="res-earn" style="display:none">
+    <div class="sec">
+      <div class="sec-hdr"><h2>📊 Earnings Whiplash — Asymmetric Setups</h2>
+        <button class="btn btn-b" onclick="loadEarn()" id="earn-btn">🔍 Scan Earnings</button>
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin-bottom:12px">
+        Next 14-day earnings with HV &gt;8%. Flags stocks where implied volatility &lt; historical realized volatility — options are mispriced.
+      </p>
+      <div id="earn-out"></div>
+    </div>
+  </div>
+
+  <!-- C: SECTOR ROTATION -->
+  <div id="res-sect" style="display:none">
+    <div class="sec">
+      <div class="sec-hdr"><h2>🔄 Sector Rotation Detector</h2>
+        <button class="btn btn-b" onclick="loadSect()" id="sect-btn">📈 Analyze Sectors</button>
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin-bottom:12px">
+        30-day sector returns vs same period 1 year ago. Detects leadership flips + top ETF money flows per rotating sector.
+      </p>
+      <div id="sect-chart-wrap" style="display:none">
+        <div class="sect-wrap"><canvas id="sect-chart" aria-label="Sector rotation bar chart"></canvas></div>
+        <div class="legend" id="sect-legend" style="margin-bottom:14px"></div>
+      </div>
+      <div id="sect-out"></div>
+    </div>
+  </div>
+
+  <!-- D: INSIDER -->
+  <div id="res-ins" style="display:none">
+    <div class="sec">
+      <div class="sec-hdr"><h2>🕵 Insider + Options Confluence</h2>
+        <button class="btn btn-b" onclick="loadIns()" id="ins-btn">🔍 Scan</button>
+      </div>
+      <div class="row">
+        <input type="text" id="ins-syms" placeholder="Symbols to scan (blank = default 20 stocks)">
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin-bottom:12px">
+        SEC Form 4 insider buys &gt;$500k + unusual options activity (volume/OI &gt;2x). Flags confluence — rare, historically bullish.
+      </p>
+      <div id="ins-out"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SETTINGS ────────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-set">
+  <div class="sec">
+    <div class="sec-hdr"><h2>⚙️ Environment Variables</h2><span class="sub">Set in Railway → Variables</span></div>
     <table>
-      <tr><th>Variable</th><th>Purpose</th></tr>
-      <tr><td><code>ALPACA_API_KEY</code></td><td>Alpaca API key</td></tr>
-      <tr><td><code>ALPACA_SECRET_KEY</code></td><td>Alpaca secret key</td></tr>
-      <tr><td><code>ALPACA_MODE</code></td><td>paper or live</td></tr>
-      <tr><td><code>WEBHOOK_SECRET</code></td><td>Must match TradingView JSON secret field</td></tr>
-      <tr><td><code>DASHBOARD_PASSWORD</code></td><td>Dashboard login password</td></tr>
-      <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>From @BotFather on Telegram</td></tr>
-      <tr><td><code>TELEGRAM_CHAT_ID</code></td><td>From @userinfobot on Telegram</td></tr>
-      <tr><td><code>MAX_POSITION_SIZE</code></td><td>Max shares per order (default 10)</td></tr>
-      <tr><td><code>DAILY_LOSS_LIMIT</code></td><td>USD loss limit per day (default 500)</td></tr>
-      <tr><td><code>APP_SECRET_KEY</code></td><td>Random string for Flask session</td></tr>
+      <tr><th>Variable</th><th>Purpose</th><th>Example</th></tr>
+      <tr><td><code>ALPACA_API_KEY</code></td><td>Alpaca API key</td><td style="color:#8b949e">pk_xxxx...</td></tr>
+      <tr><td><code>ALPACA_SECRET_KEY</code></td><td>Alpaca secret key</td><td style="color:#8b949e">sk_xxxx...</td></tr>
+      <tr><td><code>ALPACA_MODE</code></td><td>Trading mode</td><td><code>paper</code> or <code>live</code></td></tr>
+      <tr><td><code>WEBHOOK_SECRET</code></td><td>Matches TradingView JSON "secret" field</td><td><code>my_secret_123</code></td></tr>
+      <tr><td><code>DASHBOARD_PASSWORD</code></td><td>Login password for this dashboard</td><td style="color:#8b949e">mypass</td></tr>
+      <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>From @BotFather</td><td style="color:#8b949e">1234567:AABBcc...</td></tr>
+      <tr><td><code>TELEGRAM_CHAT_ID</code></td><td>From @userinfobot</td><td style="color:#8b949e">987654321</td></tr>
+      <tr><td><code>MAX_POSITION_SIZE</code></td><td>Max shares per order</td><td><code>10</code></td></tr>
+      <tr><td><code>DAILY_LOSS_LIMIT</code></td><td>USD loss limit per day</td><td><code>500</code></td></tr>
+      <tr><td><code>APP_SECRET_KEY</code></td><td>Flask session key (random string)</td><td style="color:#8b949e">random123</td></tr>
     </table>
   </div>
-
-  <div class="section" style="max-width:700px">
-    <h2>📱 Telegram Setup Guide</h2>
-    <ol style="color:#8b949e;font-size:.85rem;line-height:1.8;padding-left:18px">
-      <li>Message <strong style="color:#58a6ff">@BotFather</strong> on Telegram → type <code>/newbot</code> → follow steps → copy the <strong>token</strong></li>
-      <li>Message <strong style="color:#58a6ff">@userinfobot</strong> on Telegram → it replies with your <strong>chat_id</strong></li>
-      <li>Add both to Railway Variables: <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code></li>
-      <li>Click <strong>Test Telegram</strong> above to verify</li>
+  <div class="sec">
+    <div class="sec-hdr"><h2>📱 Telegram Setup</h2></div>
+    <ol style="font-size:12px;line-height:2.2;padding-left:18px;color:#8b949e">
+      <li>Message <strong style="color:#58a6ff">@BotFather</strong> on Telegram → <code>/newbot</code> → copy token → set as <code>TELEGRAM_BOT_TOKEN</code></li>
+      <li>Message <strong style="color:#58a6ff">@userinfobot</strong> → copy your chat_id → set as <code>TELEGRAM_CHAT_ID</code></li>
+      <li>Register webhook (after Railway deploy): <br><code>curl "https://api.telegram.org/bot{TOKEN}/setWebhook?url=https://YOUR-URL/telegram/webhook"</code></li>
+      <li>Message your bot: <code>/positions</code> <code>/pnl</code> <code>/account</code> <code>/close AAPL</code> <code>/closeall</code></li>
     </ol>
+  </div>
+  <div class="sec">
+    <div class="sec-hdr"><h2>📌 TradingView JSON</h2></div>
+    <p style="font-size:11px;color:#8b949e;margin-bottom:8px">Paste in OptiTrade Long Entry / Short Entry boxes:</p>
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:11px">
+      {"secret":"my_secret_123","symbol":"AAPL","action":"buy","quantity":1,"order_type":"market"}
+    </div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════ CLOSE MODAL ══════════════════════════════ -->
+<!-- CLOSE MODAL -->
 <div class="modal" id="close-modal">
   <div class="modal-box">
-    <h3>Close Position — <span id="modal-symbol"></span></h3>
-    <p style="color:#8b949e;font-size:.82rem;margin-bottom:12px">Leave qty blank to close full position</p>
-    <input type="number" id="modal-qty" placeholder="Qty to close (optional)" min="1" step="1">
+    <h3>Close Position — <span id="modal-sym"></span></h3>
+    <p style="font-size:11px;color:#8b949e;margin-bottom:10px">Leave qty blank to close full position</p>
+    <input type="number" id="modal-qty" placeholder="Qty to close (blank = all)" min="1">
     <div class="modal-btns">
-      <button class="btn btn-gray" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-red"  onclick="doClosePosition()">Close Position</button>
+      <button class="btn btn-n" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-r" onclick="doClose()">Confirm Close</button>
     </div>
   </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-let selectedTFs = ["15m","1h","1D"];
-let currentCloseSymbol = "";
+let killOn=false, cmpChart=null, sectChart=null;
+let anaCharts=[], currentCloseSym='', currentCloseMax=0;
+let lastAnalyzeSymbols=[], lastAnalyzeTFs=[];
 
-// ── Tab switching ─────────────────────────────────────────────────────────────
-function switchTab(name) {
-  document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
-  document.querySelectorAll(".tabs > .tab").forEach(el => el.classList.remove("active"));
-  $("tab-" + name).classList.add("active");
-  event.target.classList.add("active");
+const COLORS=['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#10b981'];
+const fmt = v => v==null?'—':'$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtPct = v => v==null?'—':(parseFloat(v)>=0?'+':'')+parseFloat(v).toFixed(2)+'%';
+const pc  = v => parseFloat(v)>=0?'g':'r';
+const empty = msg => `<div class="loading">${msg||'No data'}</div>`;
 
-  if (name === "positions") loadPositions();
-  if (name === "history")   loadHistory();
-  if (name === "analyzer")  {} // user-initiated
+// ── TAB SWITCHING ───────────────────────────────────────────────────────────
+function switchTab(idx, name) {
+  document.querySelectorAll('#main-tabs .tab').forEach((t,i)=>t.classList.toggle('on',i===idx));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  $('pane-'+name).classList.add('on');
+  if(name==='pos')  loadPositions();
+  if(name==='hist') loadHistory();
+}
+function anaSub(name, idx) {
+  ['signals','charts','compare'].forEach(n=>$('ana-'+n).style.display=n===name?'block':'none');
+  document.querySelectorAll('#pane-ana .stab').forEach((t,i)=>t.classList.toggle('on',i===idx));
+}
+function resSub(name, idx) {
+  ['inst','earn','sect','ins'].forEach(n=>$('res-'+n).style.display=n===name?'block':'none');
+  document.querySelectorAll('#pane-res .stab').forEach((t,i)=>t.classList.toggle('on',i===idx));
 }
 
-function switchResearch(name) {
-  ["institutional","earnings","sectors","insider"].forEach(n => {
-    $("research-"+n).style.display = n === name ? "block" : "none";
-    $("rtab-"+n).classList.toggle("active", n === name);
-  });
-}
-
-// ── Format helpers ────────────────────────────────────────────────────────────
-const fmt = v => v == null ? "—" : "$" + parseFloat(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-const fmtPct = v => v == null ? "—" : parseFloat(v).toFixed(2)+"%";
-const fmtPnl = v => { const n=parseFloat(v); return `<span class="${n>=0?"green":"red"}">${fmt(v)}</span>`; };
-const pnlClass = v => parseFloat(v) >= 0 ? "green" : "red";
-
-function empty(msg="No data") { return `<div style="color:#8b949e;text-align:center;padding:30px">${msg}</div>`; }
-function loading() { return `<div class="loading-overlay"><span class="spinner"></span> Loading...</div>`; }
-
-// ── Account ───────────────────────────────────────────────────────────────────
+// ── ACCOUNT ─────────────────────────────────────────────────────────────────
 async function loadAccount() {
   try {
-    const r = await fetch("/api/account");
-    const d = await r.json();
-    if (d.account) {
+    const d = await apiFetch('/api/account');
+    if(d.account) {
       const a = d.account;
-      $("portfolio").textContent = fmt(a.portfolio_value);
-      $("buying-power").textContent = fmt(a.buying_power);
-      const pnl = parseFloat(a.equity) - parseFloat(a.last_equity);
-      $("pnl-today").innerHTML = `<span class="${pnl>=0?"green":"red"}">${fmt(pnl)}</span>`;
-      $("open-count").textContent = d.positions ? d.positions.length : 0;
-      $("mode-badge").textContent = a.account_number ? "PAPER" : "LIVE";
+      $('d-port').textContent = fmt(a.portfolio_value);
+      $('d-bp').textContent   = fmt(a.buying_power);
+      const pnl = parseFloat(a.equity||0) - parseFloat(a.last_equity||0);
+      $('d-pnl').innerHTML = `<span class="${pc(pnl)}">${fmt(pnl)}</span>`;
+      $('d-op').textContent = (d.positions||[]).length;
     }
-  } catch(e) {}
+  } catch(e) { console.warn('Account error:', e); }
 }
 
-// ── Positions ─────────────────────────────────────────────────────────────────
 async function loadPositions() {
-  const el = $("positions-table");
-  if (el) el.innerHTML = loading();
+  const el = $('pos-tbl');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    const r = await fetch("/api/account");
-    const d = await r.json();
+    const d   = await apiFetch('/api/account');
     const pos = d.positions || [];
-    if (!pos.length) { if(el) el.innerHTML = empty("No open positions"); return; }
-    let html = `<table><tr><th>Symbol</th><th>Qty</th><th>Avg Entry</th><th>Current</th><th>P&L</th><th>%</th><th>Side</th><th>Action</th></tr>`;
+    if(!pos.length) { el.innerHTML = empty('No open positions'); return; }
+    let html  = '<table><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg Entry</th><th>Current</th><th>P&L</th><th>%</th><th>Action</th></tr>';
     pos.forEach(p => {
-      const pl  = parseFloat(p.unrealized_pl);
-      const pct = parseFloat(p.unrealized_plpc)*100;
-      const side= parseFloat(p.qty)>0 ? "LONG" : "SHORT";
+      const pl  = parseFloat(p.unrealized_pl||0);
+      const pct = parseFloat(p.unrealized_plpc||0)*100;
+      const side= parseFloat(p.qty)>0?'LONG':'SHORT';
       html += `<tr>
         <td><strong>${p.symbol}</strong></td>
+        <td><span class="tag ${side==='LONG'?'tg':'tr'}">${side}</span></td>
         <td>${p.qty}</td>
         <td>${fmt(p.avg_entry_price)}</td>
         <td>${fmt(p.current_price)}</td>
-        <td class="${pnlClass(pl)}">${fmt(pl)}</td>
-        <td class="${pnlClass(pct)}">${pct.toFixed(2)}%</td>
-        <td><span class="tag ${side==="LONG"?"tag-placed":"tag-error"}">${side}</span></td>
-        <td><button class="btn btn-red btn-sm" onclick="openCloseModal('${p.symbol}',${Math.abs(p.qty)})">Close</button></td>
+        <td class="${pc(pl)}">${fmt(pl)}</td>
+        <td class="${pc(pct)}">${pct.toFixed(2)}%</td>
+        <td><button class="btn btn-r btn-s" onclick="openClose('${p.symbol}',${Math.abs(p.qty)})">Close</button></td>
       </tr>`;
     });
-    html += "</table>";
-    if(el) el.innerHTML = html;
-  } catch(e) { if(el) el.innerHTML = empty("Error loading positions"); }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = empty('Error: '+e.message); }
 }
 
-// ── History ───────────────────────────────────────────────────────────────────
-async function loadHistory() {
-  loadPnlSummary();
-  loadClosedPositions();
-  loadTrades();
-}
+// ── HISTORY ─────────────────────────────────────────────────────────────────
+async function loadHistory() { loadPnl(); loadClosed(); loadTrades(); }
 
-async function loadPnlSummary() {
-  const el = $("pnl-summary");
-  if (el) el.innerHTML = loading();
+async function loadPnl() {
+  const el = $('pnl-sum');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    const r = await fetch("/api/closed_positions");
-    const d = await r.json();
+    const d = await apiFetch('/api/closed_positions');
     const s = d.summary || {};
-    if (!s.total_trades) { if(el) el.innerHTML = empty("No closed trades yet"); return; }
-    const wr = s.winners && s.total_trades ? (s.winners/s.total_trades*100).toFixed(1) : 0;
-    if(el) el.innerHTML = `
-      <div class="pnl-grid">
-        <div class="pnl-card"><div class="label">Total Trades</div><div class="number">${s.total_trades||0}</div></div>
-        <div class="pnl-card"><div class="label">Win Rate</div><div class="number green">${wr}%</div></div>
-        <div class="pnl-card"><div class="label">Total P&L</div><div class="number ${pnlClass(s.total_pnl)}">${fmt(s.total_pnl)}</div></div>
-        <div class="pnl-card"><div class="label">Avg P&L</div><div class="number ${pnlClass(s.avg_pnl)}">${fmt(s.avg_pnl)}</div></div>
-        <div class="pnl-card"><div class="label">Best Trade</div><div class="number green">${fmt(s.best_trade)}</div></div>
-        <div class="pnl-card"><div class="label">Worst Trade</div><div class="number red">${fmt(s.worst_trade)}</div></div>
-        <div class="pnl-card"><div class="label">Winners</div><div class="number green">${s.winners||0}</div></div>
-        <div class="pnl-card"><div class="label">Losers</div><div class="number red">${s.losers||0}</div></div>
-      </div>`;
-  } catch(e) { if(el) el.innerHTML = empty("Error loading summary"); }
+    if(!s.total_trades) { el.innerHTML = empty('No closed trades yet'); return; }
+    const wr = s.winners&&s.total_trades ? (s.winners/s.total_trades*100).toFixed(1) : 0;
+    $('d-wr').textContent = wr+'%';
+    $('d-wr').className   = 'val '+(parseFloat(wr)>=50?'g':'r');
+    el.innerHTML = `<div class="pnl-grid">
+      <div class="pnl-card"><div class="pl">Total Trades</div><div class="pv">${s.total_trades}</div></div>
+      <div class="pnl-card"><div class="pl">Win Rate</div><div class="pv g">${wr}%</div></div>
+      <div class="pnl-card"><div class="pl">Total P&L</div><div class="pv ${pc(s.total_pnl)}">${fmt(s.total_pnl)}</div></div>
+      <div class="pnl-card"><div class="pl">Avg P&L</div><div class="pv ${pc(s.avg_pnl)}">${fmt(s.avg_pnl)}</div></div>
+      <div class="pnl-card"><div class="pl">Best Trade</div><div class="pv g">${fmt(s.best_trade)}</div></div>
+      <div class="pnl-card"><div class="pl">Worst Trade</div><div class="pv r">${fmt(s.worst_trade)}</div></div>
+      <div class="pnl-card"><div class="pl">Winners</div><div class="pv g">${s.winners||0}</div></div>
+      <div class="pnl-card"><div class="pl">Losers</div><div class="pv r">${s.losers||0}</div></div>
+    </div>`;
+  } catch(e) { el.innerHTML = empty('Error: '+e.message); }
 }
 
-async function loadClosedPositions() {
-  const el = $("closed-table");
-  if(el) el.innerHTML = loading();
+async function loadClosed() {
+  const el = $('closed-tbl');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    const r = await fetch("/api/closed_positions");
-    const d = await r.json();
+    const d   = await apiFetch('/api/closed_positions');
     const pos = d.positions || [];
-    if(!pos.length) { if(el) el.innerHTML = empty("No closed positions yet"); return; }
-    let html = `<table><tr><th>Date</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>%</th></tr>`;
+    if(!pos.length) { el.innerHTML = empty('No closed positions yet'); return; }
+    let html = '<table><tr><th>Date</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>%</th></tr>';
     pos.forEach(p => {
       html += `<tr>
-        <td style="color:#8b949e;font-size:.78rem">${p.closed_at?.slice(0,16)||""}</td>
+        <td style="color:#8b949e;font-size:11px">${(p.closed_at||'').slice(0,16)}</td>
         <td><strong>${p.symbol}</strong></td>
-        <td><span class="tag ${p.side==="long"?"tag-placed":"tag-error"}">${(p.side||"").toUpperCase()}</span></td>
-        <td>${p.qty}</td>
-        <td>${fmt(p.entry_price)}</td>
-        <td>${fmt(p.exit_price)}</td>
-        <td class="${pnlClass(p.pnl)}">${fmt(p.pnl)}</td>
-        <td class="${pnlClass(p.pnl_pct)}">${p.pnl_pct!=null?p.pnl_pct.toFixed(2)+"%":"—"}</td>
+        <td><span class="tag ${p.side==='long'?'tg':'tr'}">${(p.side||'').toUpperCase()}</span></td>
+        <td>${p.qty}</td><td>${fmt(p.entry_price)}</td><td>${fmt(p.exit_price)}</td>
+        <td class="${pc(p.pnl)}">${fmt(p.pnl)}</td>
+        <td class="${pc(p.pnl_pct)}">${p.pnl_pct!=null?p.pnl_pct.toFixed(2)+'%':'—'}</td>
       </tr>`;
     });
-    html += "</table>";
-    if(el) el.innerHTML = html;
-  } catch(e) { if(el) el.innerHTML = empty("Error loading closed positions"); }
+    el.innerHTML = html+'</table>';
+  } catch(e) { el.innerHTML = empty('Error'); }
 }
 
 async function loadTrades() {
-  const el = $("trades-table");
-  if(el) el.innerHTML = loading();
+  const el = $('trades-tbl');
+  el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
   try {
-    const r = await fetch("/api/trades");
-    const trades = await r.json();
-    if(!trades.length) { if(el) el.innerHTML = empty("No trades yet"); return; }
-    let html = `<table><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Type</th><th>Status</th></tr>`;
+    const trades = await apiFetch('/api/trades');
+    $('d-tt').textContent = trades.length;
+    if(!trades.length) { el.innerHTML = empty('No trades yet'); return; }
+    let html = '<table><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Type</th><th>Status</th></tr>';
     trades.forEach(t => {
+      const ac = t.action==='buy'?'g':t.action==='sell'?'r':'y';
       html += `<tr>
-        <td style="color:#8b949e;font-size:.78rem">${t.timestamp||""}</td>
+        <td style="color:#8b949e;font-size:11px">${(t.timestamp||'').slice(0,16)}</td>
         <td><strong>${t.symbol}</strong></td>
-        <td class="${t.action}">${t.action?.toUpperCase()}</td>
-        <td>${t.quantity}</td>
-        <td>${t.order_type}</td>
-        <td><span class="tag tag-${t.status}">${t.status}</span></td>
+        <td class="${ac}">${(t.action||'').toUpperCase()}</td>
+        <td>${t.quantity}</td><td>${t.order_type}</td>
+        <td><span class="tag ${t.status==='placed'?'tg':t.status==='failed'?'tr':'tn'}">${t.status}</span></td>
       </tr>`;
     });
-    html += "</table>";
-    if(el) el.innerHTML = html;
-    $("total-trades").textContent = trades.length;
-  } catch(e) { if(el) el.innerHTML = empty("Error"); }
+    el.innerHTML = html+'</table>';
+  } catch(e) { el.innerHTML = empty('Error'); }
 }
 
 async function loadWebhooks() {
-  const el = $("webhooks-table");
+  const el = $('wh-tbl');
   try {
-    const r = await fetch("/api/webhooks");
-    const wh = await r.json();
-    if(!wh.length) { if(el) el.innerHTML = empty("No signals yet — waiting for TradingView"); return; }
-    let html = `<table><tr><th>Time</th><th>Status</th><th>Symbol</th><th>Action</th><th>Error</th></tr>`;
+    const wh = await apiFetch('/api/webhooks');
+    if(!wh.length) { el.innerHTML = empty('No signals yet — waiting for TradingView'); return; }
+    let html = '<table><tr><th>Time</th><th>Status</th><th>Symbol</th><th>Action</th><th>Error</th></tr>';
     wh.forEach(w => {
-      let sym="—", act="—";
-      try { const p=JSON.parse(w.raw_payload.replace(/'/g,'"')); sym=p.symbol||"—"; act=p.action||"—"; } catch(e){}
+      let sym='—',act='—';
+      try{ const p=JSON.parse(w.raw_payload.replace(/'/g,'"')); sym=p.symbol||'—'; act=p.action||'—'; }catch(e){}
+      const ac = act==='buy'?'g':act==='sell'?'r':'y';
       html += `<tr>
-        <td style="color:#8b949e;font-size:.78rem">${w.timestamp?.slice(0,16)||""}</td>
-        <td><span class="tag tag-${w.status}">${w.status}</span></td>
+        <td style="color:#8b949e;font-size:11px">${(w.timestamp||'').slice(0,16)}</td>
+        <td><span class="tag ${w.status==='success'?'tg':w.status==='error'||w.status==='rejected'?'tr':'tb'}">${w.status}</span></td>
         <td><strong>${sym}</strong></td>
-        <td class="${act}">${act.toUpperCase()}</td>
-        <td style="color:#f85149;font-size:.78rem;max-width:250px">${w.error||""}</td>
+        <td class="${ac}">${act.toUpperCase()}</td>
+        <td style="color:#f85149;font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis">${w.error||''}</td>
       </tr>`;
     });
-    html += "</table>";
-    if(el) el.innerHTML = html;
-  } catch(e) {}
-}
-
-// ── Close Modal ───────────────────────────────────────────────────────────────
-function openCloseModal(sym, maxQty) {
-  currentCloseSymbol = sym;
-  $("modal-symbol").textContent = sym;
-  $("modal-qty").placeholder = `Qty to close (max ${maxQty}) — blank = full close`;
-  $("modal-qty").value = "";
-  $("close-modal").classList.add("open");
-}
-function closeModal() { $("close-modal").classList.remove("open"); }
-
-async function doClosePosition() {
-  const qty = $("modal-qty").value;
-  const sym = currentCloseSymbol;
-  closeModal();
-  try {
-    const r = await fetch("/api/close_position", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({symbol:sym, qty: qty ? parseFloat(qty) : null})
-    });
-    const d = await r.json();
-    if(d.success) {
-      alert(`✅ Closed ${sym}. P&L: ${d.pnl != null ? "$"+d.pnl.toFixed(2) : "N/A"}`);
-    } else {
-      alert(`❌ Failed: ${d.error}`);
-    }
-    setTimeout(() => { loadPositions(); loadHistory(); }, 1500);
-  } catch(e) { alert("Error: " + e); }
-}
-
-// ── Actions ───────────────────────────────────────────────────────────────────
-async function closeAll() {
-  if(!confirm("Close ALL open positions? Cannot be undone.")) return;
-  await fetch("/api/close_all", {method:"POST"});
-  setTimeout(() => { loadPositions(); loadHistory(); loadAccount(); }, 1500);
-}
-
-async function toggleKillSwitch() {
-  const on = confirm("Enable kill switch? Halts ALL new trades.");
-  await fetch("/api/kill_switch", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:on})});
-  $("ks-status").textContent = on ? "🔴 ON" : "🟢 OFF";
-  $("ks-status").className   = "val " + (on?"red":"green");
-  alert(on ? "🔴 Kill switch ON — trading halted" : "🟢 Kill switch OFF — trading resumed");
-}
-
-async function exportExcel() {
-  window.location.href = "/api/export_excel";
-}
-
-async function testTelegram() {
-  const r = await fetch("/api/test_telegram", {method:"POST"});
-  const d = await r.json();
-  $("tg-status").textContent = d.success ? "✅ Connected" : "❌ Not connected";
-  $("tg-status").className   = "val " + (d.success?"green":"red");
-  alert(d.message);
-}
-
-// ── Analyzer Pro ──────────────────────────────────────────────────────────────
-function updateTF(cb) {
-  if(cb.checked && !selectedTFs.includes(cb.value)) selectedTFs.push(cb.value);
-  if(!cb.checked) selectedTFs = selectedTFs.filter(t=>t!==cb.value);
-}
-
-async function runAnalyzer() {
-  const raw  = $("analyzer-symbols").value;
-  const syms = raw.split(",").map(s=>s.trim().toUpperCase()).filter(Boolean);
-  if(!syms.length) { alert("Enter at least one symbol"); return; }
-  if(syms.length > 10) { alert("Max 10 symbols"); return; }
-
-  const btn = $("analyze-btn");
-  const el  = $("analyzer-results");
-  btn.disabled = true;
-  btn.textContent = "Analyzing...";
-  el.innerHTML = loading();
-
-  try {
-    const r = await fetch("/api/analyze", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({symbols:syms, timeframes:selectedTFs})
-    });
-    const d = await r.json();
-    renderAnalyzer(d);
-  } catch(e) {
-    el.innerHTML = `<div style="color:#f85149">Error: ${e}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "🔬 Analyze";
-  }
-}
-
-function renderAnalyzer(data) {
-  const el = $("analyzer-results");
-  if(!data.results?.length) { el.innerHTML = empty("No results"); return; }
-
-  const tfs = data.timeframes || [];
-  const INDICATORS = ["RSI","MACD","ADX","Bollinger","EMA50","VWAP"];
-
-  let html = `<div class="indicator-grid">`;
-
-  data.results.forEach(stock => {
-    if(stock.error) {
-      html += `<div class="stock-card"><h3>${stock.symbol} <span style="color:#f85149;font-size:.75rem">Error</span></h3><div style="color:#8b949e;font-size:.82rem">${stock.error}</div></div>`;
-      return;
-    }
-
-    const ov  = stock.overall_label || "N/A";
-    const css = stock.overall_css   || "neutral";
-    const price = stock.price ? `$${stock.price}` : "";
-
-    html += `<div class="stock-card">
-      <h3>${stock.symbol} <span style="font-size:.8rem;color:#8b949e">${price}</span>
-        <span class="tag ${css}" style="font-size:.72rem">${ov}</span>
-      </h3>
-      <table class="tf-table">
-        <tr><th>Indicator</th>`;
-    tfs.forEach(tf => { html += `<th>${tf}</th>`; });
-    html += `</tr>`;
-
-    INDICATORS.forEach(ind => {
-      html += `<tr><td style="color:#8b949e;text-align:left">${ind}</td>`;
-      tfs.forEach(tf => {
-        const tfData = stock.timeframes?.[tf];
-        if(!tfData || tfData.error || !tfData[ind]) {
-          html += `<td style="color:#555">N/A</td>`;
-        } else {
-          const d   = tfData[ind];
-          const css2= scoreToCSS(d.score);
-          html += `<td class="${css2}" title="Value: ${d.value}">${d.label}</td>`;
-        }
-      });
-      html += `</tr>`;
-    });
-
-    // Result row
-    html += `<tr><td style="color:#fff;font-weight:600;text-align:left">Result</td>`;
-    tfs.forEach(tf => {
-      const tfData = stock.timeframes?.[tf];
-      if(!tfData || tfData.error) { html += `<td style="color:#555">N/A</td>`; return; }
-      const r2  = tfData._result || {};
-      const css2= r2.css || "neutral";
-      html += `<td class="${css2}" style="font-weight:600">${r2.label||"N/A"}</td>`;
-    });
-    html += `</tr></table></div>`;
-  });
-
-  html += `</div>`;
-  el.innerHTML = html;
-}
-
-function scoreToCSS(score) {
-  if(!score) return "neutral";
-  if(score<=2) return "bull-strong";
-  if(score<=4) return "bull";
-  if(score<=5.5)return "bull-weak";
-  if(score<=6.5)return "neutral";
-  if(score<=8) return "bear-weak";
-  if(score<=9) return "bear";
-  return "bear-strong";
-}
-
-// ── Research: Institutional ───────────────────────────────────────────────────
-async function loadInstitutional() {
-  const el = $("institutional-results");
-  const btn = $("inst-btn");
-  el.innerHTML = loading();
-  btn.disabled = true;
-  btn.textContent = "Fetching SEC data...";
-  try {
-    const r = await fetch("/api/research/institutional");
-    const d = await r.json();
-    renderInstitutional(d);
-  } catch(e) {
-    el.innerHTML = `<div style="color:#f85149">Error: ${e.message}</div>`;
-  } finally {
-    btn.disabled=false; btn.textContent="📡 Load 13F Data";
-  }
-}
-
-function renderInstitutional(data) {
-  const el = $("institutional-results");
-  let html = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">`;
-
-  for(const [fund, info] of Object.entries(data)) {
-    html += `<div class="research-card">
-      <div class="fund-tag">${fund}</div>
-      <h3>${fund}</h3>`;
-
-    if(info.error) {
-      html += `<div style="color:#f85149;font-size:.82rem">⚠️ ${info.error}</div>`;
-    } else {
-      html += `<div style="color:#8b949e;font-size:.78rem;margin-bottom:8px">
-        📅 Filing: ${info.date||"N/A"} &nbsp;|&nbsp; Holdings: ${info.total_holdings||0}
-      </div>`;
-
-      if(info.top_holdings?.length) {
-        html += `<div style="font-size:.78rem;font-weight:600;color:#e6edf3;margin-bottom:6px">Top Holdings:</div>`;
-        info.top_holdings.slice(0,8).forEach(h => {
-          const val = h.value ? `$${(h.value/1000).toFixed(0)}M` : "";
-          html += `<div class="holding-row"><span>${h.name||h.cusip}</span><span style="color:#3fb950">${val}</span></div>`;
-        });
-      } else {
-        html += `<div style="color:#8b949e;font-size:.82rem">Holdings data loading from SEC EDGAR...</div>`;
-      }
-
-      html += `<div style="margin-top:8px">
-        <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${info.cik}&type=13F&dateb=&owner=include&count=10"
-           target="_blank" style="color:#58a6ff;font-size:.78rem">View on SEC EDGAR →</a>
-      </div>`;
-    }
-    html += `</div>`;
-  }
-  html += `</div>
-  <div style="color:#8b949e;font-size:.78rem;margin-top:14px">
-    ℹ️ 13F filings are submitted 45 days after quarter end. Data reflects previous quarter holdings.
-    Cross-reference with current price action for best insights.
-  </div>`;
-  el.innerHTML = html;
-}
-
-// ── Research: Earnings ────────────────────────────────────────────────────────
-async function loadEarnings() {
-  const el = $("earnings-results");
-  const btn = $("earn-btn");
-  el.innerHTML = loading();
-  btn.disabled=true; btn.textContent="Scanning...";
-  try {
-    const r = await fetch("/api/research/earnings");
-    const d = await r.json();
-    renderEarnings(d);
-  } catch(e) {
-    el.innerHTML = `<div style="color:#f85149">Error: ${e.message}</div>`;
-  } finally { btn.disabled=false; btn.textContent="🔍 Scan Earnings"; }
-}
-
-function renderEarnings(data) {
-  const el = $("earnings-results");
-
-  let html = `<div style="margin-bottom:16px">
-    <div style="color:#8b949e;font-size:.82rem;margin-bottom:10px">
-      Scanned ${data.stocks_scanned} stocks | Window: next ${data.scan_window}
-    </div>`;
-
-  if(data.asymmetric_setups?.length) {
-    html += `<div style="font-size:.95rem;font-weight:700;color:#d29922;margin-bottom:10px">
-      ⚡ ${data.asymmetric_setups.length} Asymmetric Setups Found (IV &lt; HV)</div>`;
-    data.asymmetric_setups.forEach(s => {
-      html += `<div class="research-card asymmetric" style="margin-bottom:10px">
-        <h3>⚡ ${s.symbol} — ASYMMETRIC SETUP</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;font-size:.82rem">
-          <div><span style="color:#8b949e">Earnings:</span> <strong>${s.earnings_date}</strong> (${s.days_to_earn}d)</div>
-          <div><span style="color:#8b949e">Price:</span> <strong>$${s.price}</strong></div>
-          <div><span style="color:#8b949e">Hist. Vol:</span> <strong class="yellow">${s.hist_vol}%</strong></div>
-          <div><span style="color:#8b949e">Impl. Vol:</span> <strong class="green">${s.impl_vol||"N/A"}%</strong></div>
-          <div><span style="color:#8b949e">IV/HV Ratio:</span> <strong class="red">${s.iv_hv_ratio||"N/A"}</strong></div>
-          <div><span style="color:#8b949e">Avg Move:</span> <strong>${s.avg_move||"N/A"}%</strong></div>
-        </div>
-        <div style="color:#d29922;font-size:.78rem;margin-top:8px">
-          💡 Options are cheaper than historical volatility suggests — asymmetric reward setup
-        </div>
-      </div>`;
-    });
-  } else {
-    html += `<div style="color:#8b949e;padding:10px">No clear asymmetric setups found in the next 14 days.</div>`;
-  }
-
-  html += `<div style="font-size:.9rem;font-weight:600;margin:14px 0 8px">📋 Top 10 by Historical Volatility</div>`;
-  html += `<table><tr><th>Symbol</th><th>Earnings</th><th>Days</th><th>Price</th><th>Hist Vol</th><th>Impl Vol</th><th>IV/HV</th><th>Avg Move</th><th>Setup</th></tr>`;
-
-  (data.top10||[]).forEach(s => {
-    const asymClass = s.asymmetric ? "yellow" : "green";
-    html += `<tr>
-      <td><strong>${s.symbol}</strong></td>
-      <td>${s.earnings_date}</td>
-      <td>${s.days_to_earn}</td>
-      <td>$${s.price}</td>
-      <td class="yellow">${s.hist_vol}%</td>
-      <td>${s.impl_vol||"—"}%</td>
-      <td class="${s.iv_hv_ratio&&s.iv_hv_ratio<0.75?"red":"green"}">${s.iv_hv_ratio||"—"}</td>
-      <td>${s.avg_move||"—"}%</td>
-      <td><span class="tag tag-${s.asymmetric?"placed":"received"}">${s.asymmetric?"⚡ Asymmetric":"Normal"}</span></td>
-    </tr>`;
-  });
-  html += `</table></div>`;
-  el.innerHTML = html;
-}
-
-// ── Research: Sectors ─────────────────────────────────────────────────────────
-async function loadSectors() {
-  const el = $("sectors-results");
-  const btn = $("sec-btn");
-  el.innerHTML = loading();
-  btn.disabled=true; btn.textContent="Analyzing...";
-  try {
-    const r = await fetch("/api/research/sectors");
-    const d = await r.json();
-    renderSectors(d);
-  } catch(e) {
-    el.innerHTML = `<div style="color:#f85149">Error: ${e.message}</div>`;
-  } finally { btn.disabled=false; btn.textContent="📈 Analyze Sectors"; }
-}
-
-function renderSectors(data) {
-  const el = $("sectors-results");
-  const sectors = data.sectors || {};
-  const ranked  = data.ranked  || [];
-  const rotating= data.rotating_sectors || {};
-  const etfFlows= data.etf_flows || {};
-
-  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">`;
-
-  // Left: sector bar chart
-  html += `<div class="section" style="margin:0">
-    <h2 style="margin-bottom:12px">30-Day Sector Returns</h2>`;
-  const maxAbs = Math.max(...ranked.map(([,v])=>Math.abs(v||0)), 1);
-  ranked.forEach(([name, ret]) => {
-    const pct  = ret || 0;
-    const w    = Math.abs(pct)/maxAbs*100;
-    const isRot= !!rotating[name];
-    html += `<div class="sector-bar-container">
-      <div class="sector-name">
-        <span>${isRot?"🔄 ":""}<strong>${name}</strong></span>
-        <span class="${pct>=0?"green":"red"}">${pct>=0?"+":""}${pct}%</span>
-      </div>
-      <div class="bar ${pct<0?"neg":""}" style="width:${w}%"></div>
-    </div>`;
-  });
-  html += `</div>`;
-
-  // Right: rotating sectors
-  html += `<div class="section" style="margin:0">
-    <h2>🔄 Rotating Sectors</h2>`;
-  if(!Object.keys(rotating).length) {
-    html += `<div style="color:#8b949e;padding:10px">No clear rotation detected vs 1 year ago.</div>`;
-  } else {
-    Object.entries(rotating).forEach(([name, data]) => {
-      html += `<div class="research-card" style="margin-bottom:8px">
-        <h3>🔄 ${name}</h3>
-        <div style="font-size:.82rem;display:flex;gap:16px">
-          <span>Now: <strong class="${data.return_30d>=0?"green":"red"}">${data.return_30d>=0?"+":""}${data.return_30d}%</strong></span>
-          <span>1Y ago: <strong class="${(data.return_30d_1yago||0)>=0?"green":"red"}">${(data.return_30d_1yago||0)>=0?"+":""}${data.return_30d_1yago||"N/A"}%</strong></span>
-          ${data.strength_flip?`<span class="tag tag-placed">Flip!</span>`:""}
-        </div>`;
-
-      if(etfFlows[name]?.length) {
-        html += `<div style="font-size:.78rem;margin-top:8px;color:#8b949e">Top ETFs by momentum:</div>
-          <table style="margin-top:4px;font-size:.78rem"><tr><th>ETF</th><th>10d</th><th>30d</th><th>Vol</th></tr>`;
-        etfFlows[name].forEach(e => {
-          html += `<tr>
-            <td><strong>${e.ticker}</strong></td>
-            <td class="${(e.return_10||0)>=0?"green":"red"}">${(e.return_10||0)>=0?"+":""}${e.return_10||"—"}%</td>
-            <td class="${(e.return_30||0)>=0?"green":"red"}">${(e.return_30||0)>=0?"+":""}${e.return_30||"—"}%</td>
-            <td style="color:#8b949e">${e.avg_volume ? (e.avg_volume/1e6).toFixed(1)+"M" : "—"}</td>
-          </tr>`;
-        });
-        html += `</table>`;
-      }
-      html += `</div>`;
-    });
-  }
-  html += `</div></div>`;
-  el.innerHTML = html;
-}
-
-// ── Research: Insider ─────────────────────────────────────────────────────────
-async function loadInsider() {
-  const el  = $("insider-results");
-  const btn = $("insider-btn");
-  const raw = $("insider-symbols").value;
-  const syms= raw ? raw.split(",").map(s=>s.trim().toUpperCase()).filter(Boolean) : null;
-
-  el.innerHTML = loading();
-  btn.disabled=true; btn.textContent="Scanning...";
-  try {
-    const r = await fetch("/api/research/insider", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({symbols: syms})
-    });
-    const d = await r.json();
-    renderInsider(d);
-  } catch(e) {
-    el.innerHTML = `<div style="color:#f85149">Error: ${e.message}</div>`;
-  } finally { btn.disabled=false; btn.textContent="🔍 Scan Confluence"; }
-}
-
-function renderInsider(data) {
-  const el = $("insider-results");
-  const confluence = data.confluence_stocks || [];
-  const insiders   = data.insider_buys      || [];
-
-  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">`;
-
-  // Unusual options
-  html += `<div class="section" style="margin:0">
-    <h2>📈 Unusual Options Activity</h2>`;
-  if(!confluence.length) {
-    html += `<div style="color:#8b949e;padding:10px">No unusual options flow detected in scanned stocks.</div>`;
-  } else {
-    confluence.forEach(c => {
-      html += `<div class="research-card" style="margin-bottom:8px">
-        <h3>${c.symbol} ${c.call_dominant?"🟢 Call Dominant":"🔴 Put Dominant"}</h3>`;
-      if(c.top_calls?.length) {
-        html += `<div style="font-size:.78rem;color:#3fb950;margin-bottom:4px">Unusual Calls:</div>
-          <table style="font-size:.75rem"><tr><th>Expiry</th><th>Strike</th><th>Vol</th><th>OI</th><th>Ratio</th></tr>`;
-        c.top_calls.forEach(o => {
-          html += `<tr><td>${o.expiry}</td><td>$${o.strike}</td><td>${o.volume}</td><td>${o.oi}</td><td class="yellow">${o.ratio}x</td></tr>`;
-        });
-        html += `</table>`;
-      }
-      html += `</div>`;
-    });
-  }
-  html += `</div>`;
-
-  // Insider buys
-  html += `<div class="section" style="margin:0">
-    <h2>👔 SEC Insider Purchases</h2>
-    <p style="color:#8b949e;font-size:.78rem;margin-bottom:10px">Form 4 filings — open market buys &gt;$500k</p>`;
-  if(!insiders.length || insiders[0]?.note) {
-    html += `<div style="color:#8b949e;font-size:.82rem;padding:10px">
-      ${insiders[0]?.note || "No recent large insider purchases found."}<br><br>
-      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&dateb=&owner=include&count=40"
-         target="_blank" style="color:#58a6ff">View live Form 4 filings on SEC →</a><br>
-      <a href="https://finviz.com/insidertrading.ashx?or=5&tv=5000000&tc=1&o=-transactionValue"
-         target="_blank" style="color:#58a6ff">Finviz Insider Tracker ($500k+ buys) →</a>
-    </div>`;
-  } else {
-    insiders.slice(0,10).forEach(ins => {
-      html += `<div class="research-card" style="margin-bottom:6px;padding:10px">
-        <div style="font-weight:600;font-size:.85rem">${ins.company||ins.name}</div>
-        <div style="color:#8b949e;font-size:.78rem">${ins.name} | ${ins.date}</div>
-      </div>`;
-    });
-  }
-  html += `</div>`;
-
-  html += `</div>
-  <div style="color:#8b949e;font-size:.78rem;margin-top:14px">
-    💡 <strong>Confluence signal</strong>: Look for stocks where insider buying + unusual call options appear simultaneously.
-    This combination historically precedes major moves. Always combine with technical analysis.
-  </div>`;
-
-  el.innerHTML = html;
-}
-
-// ── Load win rate from closed positions ───────────────────────────────────────
-async function loadWinRate() {
-  try {
-    const r = await fetch("/api/closed_positions");
-    const d = await r.json();
-    const s = d.summary || {};
-    if(s.total_trades && s.winners != null) {
-      const wr = (s.winners/s.total_trades*100).toFixed(1);
-      $("win-rate").textContent = wr + "%";
-      $("win-rate").className   = "val " + (parseFloat(wr)>=50?"green":"red");
-    }
+    el.innerHTML = html+'</table>';
   } catch(e){}
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-function loadAll() {
-  loadAccount();
-  loadWebhooks();
-  loadWinRate();
+// ── MODAL ───────────────────────────────────────────────────────────────────
+function openClose(sym, maxQty) {
+  currentCloseSym = sym; currentCloseMax = maxQty;
+  $('modal-sym').textContent = sym;
+  $('modal-qty').placeholder = `Qty (max ${maxQty}) — blank = full close`;
+  $('modal-qty').value = '';
+  $('close-modal').classList.add('open');
+}
+function closeModal() { $('close-modal').classList.remove('open'); }
+async function doClose() {
+  const qty = $('modal-qty').value;
+  closeModal();
+  try {
+    const d = await apiPost('/api/close_position',{symbol:currentCloseSym, qty:qty?parseFloat(qty):null});
+    if(d.success) alert(`✅ Closed ${currentCloseSym}. P&L: ${fmt(d.pnl)}`);
+    else          alert(`❌ Failed: ${d.error}`);
+    setTimeout(()=>{ loadPositions(); loadHistory(); loadAccount(); }, 1200);
+  } catch(e) { alert('Error: '+e.message); }
 }
 
-$("webhook-url").textContent = window.location.origin + "/webhook";
+// ── ACTIONS ─────────────────────────────────────────────────────────────────
+async function closeAll() {
+  if(!confirm('Close ALL positions? This cannot be undone.')) return;
+  const d = await apiPost('/api/close_all',{});
+  alert(d.success?'✅ All positions closed.':'❌ Error: '+d.error);
+  setTimeout(()=>{ loadPositions(); loadHistory(); loadAccount(); }, 1200);
+}
+async function toggleKill() {
+  const on = confirm('Enable kill switch? All new trades will be halted.');
+  await apiPost('/api/kill_switch',{enabled:on});
+  killOn = on;
+  $('kill-btn').textContent = on ? '🟢 Resume Trading' : '🔴 Kill Switch';
+  alert(on ? '🔴 Kill switch ON' : '🟢 Kill switch OFF');
+}
+function exportXL()  { window.location.href='/api/export_excel'; }
+async function testTg() {
+  const d = await apiPost('/api/test_telegram',{});
+  alert(d.success ? '✅ Telegram message sent!' : '❌ Failed: '+d.message);
+}
+
+// ── ANALYZER PRO ─────────────────────────────────────────────────────────────
+function getSelectedTFs() {
+  return ['5m','15m','1h','4h','1D','1W'].filter(tf => {
+    const el = $('tf'+tf); return el && el.checked;
+  });
+}
+
+async function runAna() {
+  const raw  = $('ana-syms').value;
+  const syms = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean).slice(0,8);
+  const tfs  = getSelectedTFs();
+  if(!syms.length) { alert('Enter symbols'); return; }
+  if(!tfs.length)  { alert('Select at least one timeframe'); return; }
+
+  lastAnalyzeSymbols = syms;
+  lastAnalyzeTFs     = tfs;
+
+  const btn = $('ana-btn');
+  btn.disabled = true; btn.innerHTML='<span class="spin"></span> Fetching live data...';
+  $('ana-signals').innerHTML = '<div class="loading"><span class="spin"></span> Fetching from Yahoo Finance...</div>';
+
+  try {
+    const d = await apiPost('/api/analyze',{symbols:syms, timeframes:tfs});
+    renderAnaGrid(d.results||[], tfs);
+  } catch(e) {
+    $('ana-signals').innerHTML = `<div style="color:#f85149;padding:20px">Error: ${e.message}</div>`;
+  } finally {
+    btn.disabled=false; btn.textContent='🔬 Analyze';
+  }
+}
+
+function renderAnaGrid(results, tfs) {
+  if(!results.length){ $('ana-signals').innerHTML=empty('No results'); return; }
+  const INDS=[['rsi','RSI'],['macd','MACD'],['adx','ADX'],['bb','Bollinger'],['ema50','EMA50'],['vwap','VWAP']];
+  const CSS_MAP={'bull2':'bull2','bull1':'bull1','bln':'bln','neut':'neut','brn':'brn','bear1':'bear1','bear2':'bear2'};
+
+  let html='<div class="ana-grid">';
+  results.forEach(stock=>{
+    if(stock.error && !stock.timeframes) {
+      html += `<div class="ana-card"><h3>${stock.symbol} <span class="tag tr">Error</span></h3><div style="color:#8b949e;font-size:11px">${stock.error}</div></div>`;
+      return;
+    }
+    const ov  = stock.overall_label||'N/A';
+    const ovC = ov.includes('Bull')?'tg':ov.includes('Bear')?'tr':'tn';
+    const price= stock.price?`$${parseFloat(stock.price).toFixed(2)}`:'';
+    html += `<div class="ana-card"><h3><span>${stock.symbol}</span><span style="font-size:11px;color:#8b949e">${price}</span><span class="tag ${ovC}">${ov}</span></h3>
+    <table class="itable"><tr><th>Indicator</th>${tfs.map(tf=>`<th>${tf}</th>`).join('')}</tr>`;
+
+    INDS.forEach(([key,name])=>{
+      html+=`<tr><td style="text-align:left;color:#8b949e">${name}</td>`;
+      tfs.forEach(tf=>{
+        const d=(stock.timeframes||{})[tf];
+        if(!d||d.error||!d[key]){html+=`<td class="neut" title="${(d&&d.error)||''}">N/A</td>`;return;}
+        const ind  = d[key];
+        const lbl  = ind.l||'N/A';
+        const val  = ind.v!=null?`<br><span style="font-size:9px;opacity:.7">${ind.v}</span>`:'';
+        const bull = lbl.toLowerCase().match(/bull|up|over(?!sold)|above|uptrend|recovering/);
+        const bear = lbl.toLowerCase().match(/bear|down|under(?!trend)|oversold|downtrend/);
+        const cls  = bull?'bull1':bear?'bear1':'neut';
+        html+=`<td class="${cls}" title="${lbl}">${lbl}${val}</td>`;
+      });
+      html+=`</tr>`;
+    });
+
+    // Result row
+    html+=`<tr><td style="text-align:left;font-weight:500;color:#e6edf3">Overall</td>`;
+    tfs.forEach(tf=>{
+      const d=(stock.timeframes||{})[tf];
+      if(!d||d.error||!d.result){html+=`<td class="neut">N/A</td>`;return;}
+      const r  =d.result;
+      const css=CSS_MAP[r.css]||'neut';
+      html+=`<td class="${css}" style="font-weight:600">${r.l||'N/A'}</td>`;
+    });
+    html+=`</tr></table></div>`;
+  });
+  html+='</div>';
+  $('ana-signals').innerHTML=html;
+}
+
+// ── CHARTS ───────────────────────────────────────────────────────────────────
+async function loadCharts() {
+  const syms   = lastAnalyzeSymbols.length ? lastAnalyzeSymbols :
+    $('ana-syms').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  const period = $('chart-period').value;
+  const wrap   = $('charts-wrap');
+  wrap.innerHTML = '<div class="loading"><span class="spin"></span> Loading charts...</div>';
+
+  anaCharts.forEach(c=>c.destroy());
+  anaCharts=[];
+
+  let gridHtml = '<div class="ana-grid">';
+  syms.slice(0,6).forEach((sym,i)=>{
+    gridHtml+=`<div class="ana-card"><h3>${sym} <span style="font-size:11px;color:#8b949e">${period}</span></h3>
+      <div class="chart-wrap"><canvas id="ac-${i}" aria-label="${sym} price chart"></canvas></div></div>`;
+  });
+  gridHtml+='</div>';
+  wrap.innerHTML=gridHtml;
+
+  for(let i=0;i<Math.min(syms.length,6);i++) {
+    try {
+      const d = await apiPost('/api/chart_data',{symbol:syms[i], period});
+      if(d.error){continue;}
+      const closes = d.close||[];
+      const dates  = d.dates||[];
+      const ctx    = $('ac-'+i);
+      if(!ctx) continue;
+      const c = new Chart(ctx,{
+        type:'line',
+        data:{
+          labels:dates,
+          datasets:[{
+            label:syms[i],
+            data:closes,
+            borderColor:COLORS[i%COLORS.length],
+            backgroundColor:COLORS[i%COLORS.length]+'18',
+            borderWidth:1.5,
+            pointRadius:0,
+            fill:true,
+            tension:0.3,
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+          scales:{
+            x:{ticks:{maxTicksLimit:6,maxRotation:0},grid:{display:false}},
+            y:{ticks:{callback:v=>'$'+v.toFixed(0)},grid:{color:'#21262d'}}
+          }
+        }
+      });
+      anaCharts.push(c);
+    } catch(e){ console.warn('Chart error',syms[i],e); }
+  }
+}
+
+// ── COMPARE ──────────────────────────────────────────────────────────────────
+async function runCompare() {
+  const raw    = $('cmp-syms').value;
+  const syms   = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean).slice(0,8);
+  const period = $('cmp-period').value;
+  if(!syms.length){ alert('Enter symbols'); return; }
+
+  if(cmpChart){ cmpChart.destroy(); cmpChart=null; }
+  $('cmp-legend').innerHTML='<span class="spin"></span>';
+
+  try {
+    const d = await apiPost('/api/compare',{symbols:syms, period});
+    const datasets=[];
+    const allDates=[];
+    syms.forEach((sym,i)=>{
+      if(!d[sym]) return;
+      if(!allDates.length) allDates.push(...(d[sym].dates||[]));
+      datasets.push({
+        label:sym,
+        data:d[sym].norm,
+        borderColor:COLORS[i%COLORS.length],
+        backgroundColor:'transparent',
+        borderWidth:2,
+        pointRadius:0,
+        tension:0.3,
+      });
+    });
+    const ctx=$('cmp-chart');
+    cmpChart=new Chart(ctx,{
+      type:'line',
+      data:{labels:allDates, datasets},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw!=null?ctx.raw.toFixed(2):'—'}%`}}},
+        scales:{
+          x:{ticks:{maxTicksLimit:8,maxRotation:0},grid:{display:false}},
+          y:{ticks:{callback:v=>v.toFixed(1)+'%'},grid:{color:'#21262d'},
+             title:{display:true,text:'% Return (normalised)',color:'#8b949e',font:{size:11}}}
+        }
+      }
+    });
+    $('cmp-legend').innerHTML=syms.map((s,i)=>`<span><span class="legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${s}</span>`).join('');
+  } catch(e){ $('cmp-legend').innerHTML=`<span style="color:#f85149">Error: ${e.message}</span>`; }
+}
+
+// ── RESEARCH: INSTITUTIONAL ───────────────────────────────────────────────────
+async function loadInst() {
+  const btn=$('inst-btn'), el=$('inst-out');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Fetching SEC data...';
+  el.innerHTML='<div class="loading"><span class="spin"></span> Querying SEC EDGAR...</div>';
+  try {
+    const d = await apiFetch('/api/research/institutional');
+    renderInstitutional(d);
+  } catch(e){ el.innerHTML=`<div style="color:#f85149">Error: ${e.message}</div>`; }
+  finally{ btn.disabled=false; btn.textContent='📡 Reload'; }
+}
+
+function renderInstitutional(d) {
+  const el=$('inst-out');
+  const funds    = d.funds||{};
+  const momentum = d.momentum_stocks||[];
+
+  let html='';
+
+  // Smart money consensus stocks
+  if(momentum.length) {
+    html+=`<div class="res-card" style="border-color:#3fb950;margin-bottom:14px">
+      <h3 style="color:#3fb950">🎯 Smart Money Consensus — Held by Multiple Funds</h3>
+      <p style="font-size:11px;color:#8b949e;margin-bottom:10px">Stocks held by 2+ of the 5 major funds — institutional accumulation signal</p>
+      <table><tr><th>Stock</th><th>Ticker</th><th>Funds</th><th>Total Value</th><th>Total Shares</th></tr>`;
+    momentum.forEach(s=>{
+      html+=`<tr>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.ticker?`<span class="tag tb">${s.ticker}</span>`:'—'}</td>
+        <td><span class="tag tg">${s.funds.length} funds</span> <span style="font-size:10px;color:#8b949e">${s.funds.join(', ')}</span></td>
+        <td class="g">$${(s.total_value/1000).toFixed(0)}M</td>
+        <td>${s.total_shares.toLocaleString()}</td>
+      </tr>`;
+    });
+    html+=`</table></div>`;
+  }
+
+  // Individual fund cards
+  html+=`<div class="ana-grid">`;
+  for(const [fund,info] of Object.entries(funds)) {
+    html+=`<div class="res-card"><div class="fund-badge">${fund}</div><h3>${fund}</h3>`;
+    if(info.error||!info.found) {
+      html+=`<div style="color:#f85149;font-size:11px">⚠️ ${info.error||'No 13F found'}</div>`;
+    } else {
+      html+=`<div style="font-size:11px;color:#8b949e;margin-bottom:8px">
+        📅 Filed: ${info.date||'N/A'} &nbsp;|&nbsp;
+        Holdings: ${info.total_holdings||0} &nbsp;|&nbsp;
+        AUM: $${info.total_value_bn||0}B
+      </div>`;
+      if(info.top_holdings?.length) {
+        info.top_holdings.slice(0,8).forEach(h=>{
+          const val=h.value?(h.value/1000).toFixed(0)+'M':'';
+          const ticker=h.ticker?`<span class="tag tb" style="font-size:9px">${h.ticker}</span>`:'';
+          html+=`<div class="hold-row">
+            <span>${ticker} ${h.name||h.cusip}</span>
+            <span class="g">${val?'$'+val:''}</span>
+          </div>`;
+        });
+      } else {
+        html+=`<div style="color:#8b949e;font-size:11px">Holdings parsing — <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${info.cik}&type=13F&dateb=&owner=include&count=10" target="_blank">View on SEC →</a></div>`;
+      }
+    }
+    html+=`</div>`;
+  }
+  html+=`</div>
+  <div style="color:#8b949e;font-size:11px;margin-top:10px">
+    ⚠️ 13F filings are 45 days delayed — reflect previous quarter end.
+  </div>`;
+  el.innerHTML=html;
+}
+
+// ── RESEARCH: EARNINGS ────────────────────────────────────────────────────────
+async function loadEarn() {
+  const btn=$('earn-btn'), el=$('earn-out');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Scanning...';
+  el.innerHTML='<div class="loading"><span class="spin"></span> Scanning earnings + options data...</div>';
+  try {
+    const d = await apiFetch('/api/research/earnings');
+    renderEarnings(d);
+  } catch(e){ el.innerHTML=`<div style="color:#f85149">Error: ${e.message}</div>`; }
+  finally{ btn.disabled=false; btn.textContent='🔍 Scan Earnings'; }
+}
+
+function renderEarnings(d) {
+  const el=$('earn-out');
+  const asym  = d.asymmetric_setups||[];
+  const top10 = d.top10||[];
+
+  let html=`<div style="font-size:11px;color:#8b949e;margin-bottom:12px">
+    Scanned: ${d.stocks_scanned} stocks | Found with earnings: ${d.with_earnings||0} | Scan date: ${d.scan_date}</div>`;
+
+  if(asym.length) {
+    html+=`<div style="font-size:13px;font-weight:500;color:#d29922;margin-bottom:10px">⚡ ${asym.length} Asymmetric Setup${asym.length>1?'s':''} Found — IV < HV</div>`;
+    asym.forEach(s=>{
+      html+=`<div class="res-card asym" style="margin-bottom:10px">
+        <h3>⚡ ${s.symbol} — ASYMMETRIC SETUP</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;font-size:12px;margin-bottom:8px">
+          <div><span style="color:#8b949e">Earnings:</span> <strong>${s.earnings_date}</strong> (${s.days_to_earn}d)</div>
+          <div><span style="color:#8b949e">Price:</span> <strong>$${s.price}</strong></div>
+          <div><span style="color:#8b949e">Hist. Vol:</span> <strong class="y">${s.hist_vol}%</strong></div>
+          <div><span style="color:#8b949e">Impl. Vol:</span> <strong class="g">${s.impl_vol||'N/A'}%</strong></div>
+          <div><span style="color:#8b949e">IV/HV:</span> <strong class="r">${s.iv_hv_ratio||'N/A'}</strong></div>
+          <div><span style="color:#8b949e">Avg Move:</span> <strong>${s.avg_move||'N/A'}%</strong></div>
+        </div>
+        <div style="color:#d29922;font-size:11px">💡 Options price in LESS volatility than history delivers — long options strategies may have edge here</div>
+      </div>`;
+    });
+  } else {
+    html+=`<div style="color:#8b949e;padding:10px;margin-bottom:12px">No asymmetric setups in next 14 days. Showing all with upcoming earnings:</div>`;
+  }
+
+  if(top10.length) {
+    html+=`<div style="font-size:12px;font-weight:500;margin-bottom:8px">📋 All Stocks with Upcoming Earnings (by Hist. Volatility)</div>
+    <table><tr><th>Symbol</th><th>Earnings</th><th>Days</th><th>Price</th><th>Hist Vol</th><th>Impl Vol</th><th>IV/HV</th><th>Avg Move</th><th>Setup</th></tr>`;
+    top10.forEach(s=>{
+      const asym_s = s.asymmetric;
+      html+=`<tr>
+        <td><strong>${s.symbol}</strong></td>
+        <td>${s.earnings_date}</td>
+        <td>${s.days_to_earn}</td>
+        <td>$${s.price}</td>
+        <td class="y">${s.hist_vol}%</td>
+        <td>${s.impl_vol||'—'}%</td>
+        <td class="${s.iv_hv_ratio&&s.iv_hv_ratio<0.78?'r':'g'}">${s.iv_hv_ratio||'—'}</td>
+        <td>${s.avg_move||'—'}%</td>
+        <td><span class="tag ${asym_s?'ty':'tn'}">${asym_s?'⚡ Asymmetric':'Normal'}</span></td>
+      </tr>`;
+    });
+    html+=`</table>`;
+  }
+  el.innerHTML=html;
+}
+
+// ── RESEARCH: SECTORS ─────────────────────────────────────────────────────────
+async function loadSect() {
+  const btn=$('sect-btn'), el=$('sect-out');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Fetching sector data...';
+  el.innerHTML='<div class="loading"><span class="spin"></span> Pulling Yahoo Finance sector ETF data...</div>';
+  try {
+    const d = await apiFetch('/api/research/sectors');
+    renderSectors(d);
+  } catch(e){ el.innerHTML=`<div style="color:#f85149">Error: ${e.message}</div>`; }
+  finally{ btn.disabled=false; btn.textContent='📈 Refresh'; }
+}
+
+function renderSectors(d) {
+  const el    = $('sect-out');
+  const secs  = d.sectors||{};
+  const ranked= d.ranked||[];
+  const rots  = d.rotating||{};
+  const flows = d.etf_flows||{};
+
+  // Draw bar chart
+  $('sect-chart-wrap').style.display='block';
+  if(sectChart){ sectChart.destroy(); }
+  const labels  = ranked.map(r=>r[0]);
+  const currVals= ranked.map(r=>r[1]||0);
+  const priorVals= ranked.map(r=>(secs[r[0]]||{}).return_1y_ago||0);
+  const barColors= currVals.map(v=>v>=0?'#238636':'#da3633');
+
+  sectChart=new Chart($('sect-chart'),{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:'Last 30 days',data:currVals,backgroundColor:barColors,borderRadius:3},
+        {label:'Same period 1yr ago',data:priorVals,backgroundColor:'#30363d',borderRadius:3},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{maxRotation:45,font:{size:10}},grid:{display:false}},
+        y:{ticks:{callback:v=>v+'%'},grid:{color:'#21262d'}}
+      }
+    }
+  });
+  $('sect-legend').innerHTML=
+    `<span><span class="legend-dot" style="background:#238636"></span>Last 30d (green=+ve, red=-ve)</span>
+     <span><span class="legend-dot" style="background:#30363d"></span>Same period 1yr ago</span>`;
+
+  // Rotating sectors
+  let html='';
+  if(Object.keys(rots).length) {
+    html+=`<div style="font-size:13px;font-weight:500;color:#d29922;margin:14px 0 10px">🔄 Rotating Sectors — Leadership Flipping</div>`;
+    for(const [name,sec] of Object.entries(rots)) {
+      const etfList = flows[name]||[];
+      html+=`<div class="res-card" style="margin-bottom:10px">
+        <h3>🔄 ${name} ${sec.flip?'<span class="tag ty">Flip!</span>':''}</h3>
+        <div style="display:flex;gap:16px;font-size:12px;margin-bottom:10px">
+          <span>Now 30d: <strong class="${pc(sec.return_30d)}">${fmtPct(sec.return_30d)}</strong></span>
+          <span>1yr ago: <strong class="${pc(sec.return_1y_ago)}">${fmtPct(sec.return_1y_ago)}</strong></span>
+          <span>ETF: <span class="tag tb">${sec.etf}</span></span>
+        </div>`;
+      if(etfList.length) {
+        html+=`<div style="font-size:11px;color:#8b949e;margin-bottom:6px">Top ETFs by money flow:</div>
+          <table><tr><th>ETF</th><th>Price</th><th>10d Return</th><th>30d Return</th><th>Avg Vol</th><th>Money Flow $M</th></tr>`;
+        etfList.forEach(e=>{
+          html+=`<tr>
+            <td><strong>${e.ticker}</strong></td>
+            <td>${e.price?'$'+e.price:'—'}</td>
+            <td class="${pc(e.return_10)}">${fmtPct(e.return_10)}</td>
+            <td class="${pc(e.return_30)}">${fmtPct(e.return_30)}</td>
+            <td style="color:#8b949e">${e.avg_volume?(e.avg_volume/1e6).toFixed(1)+'M':'—'}</td>
+            <td class="g">${e.money_flow?'$'+e.money_flow+'M':'—'}</td>
+          </tr>`;
+        });
+        html+=`</table>`;
+      }
+      html+=`</div>`;
+    }
+  } else {
+    html+=`<div style="color:#8b949e;padding:10px">No clear sector rotation detected vs 1 year ago.</div>`;
+  }
+
+  // Full sector table
+  html+=`<div style="font-size:12px;font-weight:500;margin:14px 0 8px">📊 All Sectors — 30d vs 1yr ago</div>
+    <table><tr><th>Sector</th><th>ETF</th><th>30d Return</th><th>1yr ago</th><th>Change</th><th>Status</th></tr>`;
+  ranked.forEach(([name, ret])=>{
+    const s    = secs[name]||{};
+    const prior= s.return_1y_ago;
+    const diff = (ret!=null&&prior!=null)?ret-prior:null;
+    html+=`<tr>
+      <td><strong>${name}</strong></td>
+      <td><span class="tag tb">${s.etf||''}</span></td>
+      <td class="${pc(ret)}">${fmtPct(ret)}</td>
+      <td class="${pc(prior)}">${fmtPct(prior)}</td>
+      <td class="${pc(diff)}">${diff!=null?(diff>=0?'+':'')+diff.toFixed(2)+'%':'—'}</td>
+      <td>${s.rotating?'<span class="tag ty">🔄 Rotating</span>':s.flip?'<span class="tag tg">↗ Flip</span>':'<span class="tag tn">Stable</span>'}</td>
+    </tr>`;
+  });
+  html+=`</table><div style="font-size:11px;color:#8b949e;margin-top:8px">Generated: ${d.generated||''}</div>`;
+  el.innerHTML=html;
+}
+
+// ── RESEARCH: INSIDER ─────────────────────────────────────────────────────────
+async function loadIns() {
+  const btn=$('ins-btn'), el=$('ins-out');
+  const raw  = $('ins-syms').value;
+  const syms = raw ? raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean) : null;
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Scanning...';
+  el.innerHTML='<div class="loading"><span class="spin"></span> Checking SEC Form 4 + options flow...</div>';
+  try {
+    const d = await apiPost('/api/research/insider',{symbols:syms});
+    renderInsider(d);
+  } catch(e){ el.innerHTML=`<div style="color:#f85149">Error: ${e.message}</div>`; }
+  finally{ btn.disabled=false; btn.textContent='🔍 Scan'; }
+}
+
+function renderInsider(d) {
+  const el      = $('ins-out');
+  const conf    = d.confluence_stocks||[];
+  const insiders= d.insider_buys||[];
+
+  let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">`;
+
+  // Unusual options
+  html+=`<div>
+    <div style="font-size:12px;font-weight:500;margin-bottom:10px">📈 Unusual Options Activity</div>`;
+  if(!conf.length) {
+    html+=`<div style="color:#8b949e;font-size:12px;padding:10px">No unusual options flow in scanned stocks.</div>`;
+  } else {
+    conf.forEach(c=>{
+      const dom = c.call_dominant?'🟢 Call Dominant':'🔴 Put Dominant';
+      html+=`<div class="res-card" style="margin-bottom:8px">
+        <h3>${c.symbol} <span style="font-size:11px">${dom}</span></h3>
+        ${c.price?`<div style="font-size:11px;color:#8b949e">Price: $${c.price}</div>`:''}`;
+      if(c.unusual_calls?.length) {
+        html+=`<div style="font-size:10px;color:#3fb950;margin:6px 0 3px">Unusual Calls:</div>
+          <table><tr><th>Strike</th><th>Vol</th><th>OI</th><th>Ratio</th><th>IV%</th></tr>`;
+        c.unusual_calls.forEach(o=>{
+          html+=`<tr><td>$${o.strike}</td><td>${o.volume}</td><td>${o.oi}</td><td class="y">${o.ratio}x</td><td>${o.iv}%</td></tr>`;
+        });
+        html+=`</table>`;
+      }
+      if(c.unusual_puts?.length) {
+        html+=`<div style="font-size:10px;color:#f85149;margin:6px 0 3px">Unusual Puts:</div>
+          <table><tr><th>Strike</th><th>Vol</th><th>OI</th><th>Ratio</th><th>IV%</th></tr>`;
+        c.unusual_puts.forEach(o=>{
+          html+=`<tr><td>$${o.strike}</td><td>${o.volume}</td><td>${o.oi}</td><td class="y">${o.ratio}x</td><td>${o.iv}%</td></tr>`;
+        });
+        html+=`</table>`;
+      }
+      html+=`</div>`;
+    });
+  }
+  html+=`</div>`;
+
+  // Insider buys
+  html+=`<div>
+    <div style="font-size:12px;font-weight:500;margin-bottom:10px">👔 SEC Form 4 — Insider Purchases</div>`;
+  if(!insiders.length) {
+    html+=`<div style="color:#8b949e;font-size:12px;padding:10px">No recent Form 4 purchases found.<br><br>
+      <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&dateb=&owner=include&count=40" target="_blank">Live SEC Form 4 →</a><br>
+      <a href="https://finviz.com/insidertrading.ashx?or=5&tv=500000&tc=1&o=-transactionValue" target="_blank">Finviz Insider Tracker →</a>
+    </div>`;
+  } else {
+    insiders.forEach(ins=>{
+      html+=`<div class="res-card" style="margin-bottom:6px;padding:10px">
+        <div style="font-weight:500;font-size:12px">${ins.company||'—'}</div>
+        <div style="color:#8b949e;font-size:11px">${ins.filer||'—'} | ${ins.date||'—'}</div>
+      </div>`;
+    });
+    html+=`<div style="font-size:10px;color:#8b949e;margin-top:6px">
+      <a href="https://finviz.com/insidertrading.ashx?or=5&tv=500000&tc=1&o=-transactionValue" target="_blank">Full insider tracker →</a>
+    </div>`;
+  }
+  html+=`</div></div>`;
+
+  if(conf.length && insiders.length) {
+    html+=`<div style="background:#0d2818;border:1px solid #238636;border-radius:8px;padding:12px;margin-top:12px;font-size:12px">
+      <strong class="g">💡 Confluence Signal</strong><br>
+      Cross-reference the unusual options list above with insider buys.
+      Stocks appearing in both lists simultaneously are the highest-conviction setups.
+      Check Finviz Insider Tracker for value amounts.
+    </div>`;
+  }
+
+  html+=`<div style="font-size:11px;color:#8b949e;margin-top:10px">Generated: ${d.generated||''}</div>`;
+  el.innerHTML=html;
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+async function apiFetch(url) {
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+async function apiPost(url, body) {
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+function loadAll() { loadAccount(); loadWebhooks(); loadPnl(); }
+$('wh-url').textContent = window.location.origin+'/webhook';
 loadAll();
 setInterval(loadAll, 30000);
 </script>

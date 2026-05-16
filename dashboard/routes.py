@@ -1,10 +1,10 @@
 """
-dashboard/routes.py — All dashboard routes
+dashboard/routes.py — All dashboard routes (v4 complete)
 """
 from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for, send_file
-import io
+import io, json
 from core.database import (get_recent_trades, get_recent_webhooks, get_closed_positions,
-                            get_closed_summary, log_closed_position, get_all_trades)
+                            get_closed_summary, log_closed_position)
 from core.config import Config
 from core.telegram import send_telegram, alert_kill_switch
 from core.excel_export import export_trades_excel
@@ -15,8 +15,12 @@ logger = get_logger(__name__)
 dashboard_bp = Blueprint("dashboard", __name__)
 alpaca = AlpacaAdapter()
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-@dashboard_bp.route("/", methods=["GET"])
+def _auth():
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
+
+@dashboard_bp.route("/")
 def index():
     if not session.get("logged_in"):
         return redirect(url_for("dashboard.login"))
@@ -37,194 +41,209 @@ def logout():
     session.clear()
     return redirect(url_for("dashboard.login"))
 
-def _auth():
-    if not session.get("logged_in"):
-        return jsonify({"error":"Unauthorized"}), 401
-    return None
-
-# ── Account ───────────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/account")
 def api_account():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     try:
-        account   = alpaca.get_account()
-        positions = alpaca.get_positions()
-        return jsonify({"account": account, "positions": positions})
+        return jsonify({"account": alpaca.get_account(), "positions": alpaca.get_positions()})
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
-# ── Trades ────────────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/trades")
 def api_trades():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     return jsonify(get_recent_trades(50))
 
 @dashboard_bp.route("/api/webhooks")
 def api_webhooks():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     return jsonify(get_recent_webhooks(20))
 
-# ── Closed positions ──────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/closed_positions")
 def api_closed_positions():
-    e = _auth()
+    e = _auth(); 
     if e: return e
-    return jsonify({
-        "positions": get_closed_positions(100),
-        "summary":   get_closed_summary()
-    })
+    return jsonify({"positions": get_closed_positions(100), "summary": get_closed_summary()})
 
-# ── Close selected position ───────────────────────────────────────────────────
 @dashboard_bp.route("/api/close_position", methods=["POST"])
 def api_close_position():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     data   = request.json or {}
     symbol = data.get("symbol","").upper().strip()
-    qty    = data.get("qty", None)  # optional: partial close qty
-
+    qty    = data.get("qty", None)
     if not symbol:
         return jsonify({"success": False, "error": "Symbol required"}), 400
-
     try:
-        # Get current position for P&L tracking
-        pos = alpaca.get_position(symbol)
+        pos          = alpaca.get_position(symbol)
         entry_price  = float(pos.get("avg_entry_price", 0)) if pos else None
-        current_price= float(pos.get("current_price", 0))  if pos else None
+        current_price= float(pos.get("current_price",  0)) if pos else None
         pos_qty      = float(pos.get("qty", 0))             if pos else 0
-        side         = "long" if pos_qty > 0 else "short"   if pos else "long"
+        side         = "long" if pos_qty > 0 else "short"
 
-        # Partial or full close
         if qty and float(qty) < abs(pos_qty):
-            close_qty = float(qty)
+            close_qty  = float(qty)
             order_side = "sell" if pos_qty > 0 else "buy"
-            result = alpaca.place_market_order(symbol, order_side, close_qty)
+            result     = alpaca.place_market_order(symbol, order_side, close_qty)
         else:
-            result = alpaca.close_position(symbol)
+            result    = alpaca.close_position(symbol)
             close_qty = abs(pos_qty)
 
-        # Log to closed_positions
         if entry_price and current_price:
-            log_closed_position(
-                symbol=symbol, qty=close_qty,
-                entry_price=entry_price, exit_price=current_price,
-                side=side, alpaca_id=result.get("id") if result else None
-            )
-
-        pnl = ((current_price - entry_price) * close_qty
-               if entry_price and current_price and side=="long"
-               else (entry_price - current_price) * close_qty
-               if entry_price and current_price else 0)
-
-        send_telegram(
-            f"📤 <b>POSITION CLOSED</b>\n"
-            f"📌 {symbol} | Qty: {close_qty}\n"
-            f"💰 P&L: <b>${pnl:+.2f}</b>"
-        )
-
-        return jsonify({"success": True, "result": result, "pnl": round(pnl, 2)})
+            log_closed_position(symbol, close_qty, entry_price, current_price, side,
+                                alpaca_id=result.get("id") if result else None)
+        pnl = ((current_price - entry_price) * close_qty if side == "long"
+               else (entry_price - current_price) * close_qty) if entry_price and current_price else 0
+        send_telegram(f"📤 <b>CLOSED {symbol}</b> Qty:{close_qty} P&L:<b>${pnl:+.2f}</b>")
+        return jsonify({"success": True, "pnl": round(pnl,2)})
     except Exception as ex:
         return jsonify({"success": False, "error": str(ex)}), 500
 
-# ── Close ALL ─────────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/close_all", methods=["POST"])
 def api_close_all():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     try:
         positions = alpaca.get_positions()
         for p in positions:
-            sym    = p["symbol"]
-            qty    = float(p["qty"])
-            entry  = float(p.get("avg_entry_price", 0))
-            curr   = float(p.get("current_price", 0))
-            side   = "long" if qty > 0 else "short"
-            log_closed_position(sym, abs(qty), entry, curr, side)
+            sym  = p["symbol"]
+            qty  = float(p["qty"])
+            en   = float(p.get("avg_entry_price",0))
+            cu   = float(p.get("current_price",0))
+            side = "long" if qty > 0 else "short"
+            log_closed_position(sym, abs(qty), en, cu, side)
         result = alpaca.close_all_positions()
         send_telegram("🚨 <b>ALL POSITIONS CLOSED</b> via dashboard")
-        return jsonify({"success": True, "result": result})
+        return jsonify({"success": True})
     except Exception as ex:
         return jsonify({"success": False, "error": str(ex)}), 500
 
-# ── Kill switch ───────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/kill_switch", methods=["POST"])
 def api_kill_switch():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     state = request.json.get("enabled", True)
-    with open(".kill_switch", "w") as f:
+    with open(".kill_switch","w") as f:
         f.write("1" if state else "0")
     Config.KILL_SWITCH = state
     alert_kill_switch(state)
     return jsonify({"success": True, "kill_switch": state})
 
-# ── Excel export ──────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/export_excel")
 def api_export_excel():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     try:
         data = export_trades_excel()
-        return send_file(
-            io.BytesIO(data),
+        from datetime import datetime
+        return send_file(io.BytesIO(data),
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             as_attachment=True,
-            download_name=f"trades_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-        )
+            download_name=f"trades_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
-# ── Telegram test ─────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/test_telegram", methods=["POST"])
 def api_test_telegram():
-    e = _auth()
+    e = _auth(); 
     if e: return e
-    ok = send_telegram("✅ <b>Telegram test message</b>\nYour trading bot is connected!")
+    ok = send_telegram("✅ <b>Telegram connected!</b>\nYour OptiTrade bot is online.")
     return jsonify({"success": ok, "message": "Sent!" if ok else "Failed — check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID"})
 
-# ── Analyzer ──────────────────────────────────────────────────────────────────
+# ── Analyzer Pro ──────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/analyze", methods=["POST"])
 def api_analyze():
-    e = _auth()
+    e = _auth(); 
     if e: return e
-    data      = request.json or {}
-    symbols   = [s.strip().upper() for s in data.get("symbols", []) if s.strip()]
-    timeframes= data.get("timeframes", ["15m","1h","1D"])
-
+    data       = request.json or {}
+    symbols    = [s.strip().upper() for s in data.get("symbols",[]) if s.strip()][:10]
+    timeframes = data.get("timeframes", ["15m","1h","1D"])
     if not symbols:
-        return jsonify({"error": "No symbols provided"}), 400
-    if len(symbols) > 10:
-        return jsonify({"error": "Max 10 symbols at once"}), 400
-
-    from core.analyzer import analyze_symbol
-    results = []
-    for sym in symbols:
-        try:
-            result = analyze_symbol(sym, timeframes)
-            results.append(result)
-        except Exception as ex:
-            results.append({"symbol": sym, "error": str(ex)})
-
-    return jsonify({"results": results, "timeframes": timeframes})
-
-# ── Research: Institutional ───────────────────────────────────────────────────
-@dashboard_bp.route("/api/research/institutional", methods=["GET"])
-def api_research_institutional():
-    e = _auth()
-    if e: return e
+        return jsonify({"error":"No symbols"}), 400
     try:
-        from research.sec_filings import get_institutional_tracker
-        return jsonify(get_institutional_tracker())
+        from core.analyzer import analyze_multiple
+        results = analyze_multiple(symbols, timeframes)
+        return jsonify({"results": results, "timeframes": timeframes})
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
-# ── Research: Earnings Whiplash ───────────────────────────────────────────────
-@dashboard_bp.route("/api/research/earnings", methods=["GET"])
+# ── Stock chart data ──────────────────────────────────────────────────────────
+@dashboard_bp.route("/api/chart_data", methods=["POST"])
+def api_chart_data():
+    e = _auth(); 
+    if e: return e
+    data   = request.json or {}
+    symbol = data.get("symbol","").upper()
+    period = data.get("period","3mo")
+    try:
+        from core.data_engine import get_chart
+        chart = get_chart(symbol, "1d", period)
+        if not chart:
+            return jsonify({"error": "No data"}), 404
+        # Return dates + OHLCV
+        from datetime import datetime
+        dates  = [datetime.fromtimestamp(ts).strftime("%m/%d") for ts in chart["timestamps"]]
+        return jsonify({
+            "symbol":  symbol,
+            "dates":   dates,
+            "open":    chart["open"],
+            "high":    chart["high"],
+            "low":     chart["low"],
+            "close":   chart["close"],
+            "volume":  chart["volume"],
+        })
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+# ── Compare stocks ────────────────────────────────────────────────────────────
+@dashboard_bp.route("/api/compare", methods=["POST"])
+def api_compare():
+    e = _auth(); 
+    if e: return e
+    data    = request.json or {}
+    symbols = [s.strip().upper() for s in data.get("symbols",[]) if s.strip()][:8]
+    period  = data.get("period","3mo")
+    if not symbols:
+        return jsonify({"error":"No symbols"}), 400
+    try:
+        from core.data_engine import get_chart
+        from datetime import datetime
+        result = {}
+        for sym in symbols:
+            chart = get_chart(sym, "1d", period)
+            if not chart:
+                continue
+            dates  = [datetime.fromtimestamp(ts).strftime("%m/%d") for ts in chart["timestamps"]]
+            closes = chart["close"]
+            # Normalise to % return from start
+            base   = next((c for c in closes if c), None)
+            if not base:
+                continue
+            norm = [round((c/base-1)*100,2) if c else None for c in closes]
+            result[sym] = {"dates": dates, "norm": norm, "closes": closes}
+        return jsonify(result)
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+# ── Research routes (free data) ───────────────────────────────────────────────
+@dashboard_bp.route("/api/research/institutional")
+def api_research_institutional():
+    e = _auth(); 
+    if e: return e
+    try:
+        from research.sec_filings import get_institutional_tracker, analyze_institutional_momentum
+        data      = get_institutional_tracker()
+        momentum  = analyze_institutional_momentum(data)
+        return jsonify({"funds": data, "momentum_stocks": momentum})
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+@dashboard_bp.route("/api/research/earnings")
 def api_research_earnings():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     try:
         from research.earnings import get_earnings_whiplash
@@ -232,10 +251,9 @@ def api_research_earnings():
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
-# ── Research: Sector Rotation ─────────────────────────────────────────────────
-@dashboard_bp.route("/api/research/sectors", methods=["GET"])
+@dashboard_bp.route("/api/research/sectors")
 def api_research_sectors():
-    e = _auth()
+    e = _auth(); 
     if e: return e
     try:
         from research.sector_rotation import get_sector_rotation
@@ -243,172 +261,71 @@ def api_research_sectors():
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
-# ── Research: Insider + Options ───────────────────────────────────────────────
 @dashboard_bp.route("/api/research/insider", methods=["POST"])
 def api_research_insider():
-    e = _auth()
+    e = _auth(); 
     if e: return e
+    data    = request.json or {}
+    symbols = data.get("symbols", None)
     try:
-        data    = request.json or {}
-        symbols = data.get("symbols", None)
         from research.insider_flow import get_confluence_stocks
         return jsonify(get_confluence_stocks(symbols))
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
-# ── Health ────────────────────────────────────────────────────────────────────
-@dashboard_bp.route("/health")
-def health():
-    return jsonify({"status":"ok"})
-
-# ── AI Research routes (Anthropic API powered) ────────────────────────────────
-@dashboard_bp.route("/api/ai/institutional", methods=["GET"])
-def api_ai_institutional():
-    e = _auth()
-    if e: return e
-    try:
-        from research.ai_research import get_institutional_analysis
-        return jsonify(get_institutional_analysis())
-    except Exception as ex:
-        return jsonify({"error": str(ex)}), 500
-
-@dashboard_bp.route("/api/ai/earnings", methods=["GET"])
-def api_ai_earnings():
-    e = _auth()
-    if e: return e
-    try:
-        from research.ai_research import get_earnings_whiplash
-        return jsonify(get_earnings_whiplash())
-    except Exception as ex:
-        return jsonify({"error": str(ex)}), 500
-
-@dashboard_bp.route("/api/ai/sectors", methods=["GET"])
-def api_ai_sectors():
-    e = _auth()
-    if e: return e
-    try:
-        from research.ai_research import get_sector_rotation
-        return jsonify(get_sector_rotation())
-    except Exception as ex:
-        return jsonify({"error": str(ex)}), 500
-
-@dashboard_bp.route("/api/ai/insider", methods=["POST"])
-def api_ai_insider():
-    e = _auth()
-    if e: return e
-    try:
-        data    = request.json or {}
-        symbols = data.get("symbols", None)
-        from research.ai_research import get_insider_confluence
-        return jsonify(get_insider_confluence(symbols))
-    except Exception as ex:
-        return jsonify({"error": str(ex)}), 500
-
-@dashboard_bp.route("/api/ai/analyze", methods=["POST"])
-def api_ai_analyze():
-    e = _auth()
-    if e: return e
-    try:
-        data      = request.json or {}
-        symbols   = data.get("symbols", [])
-        timeframes= data.get("timeframes", ["1D"])
-        from research.ai_research import analyze_stocks_ai
-        return jsonify(analyze_stocks_ai(symbols, timeframes))
-    except Exception as ex:
-        return jsonify({"error": str(ex)}), 500
-
-
-# ── Telegram bot webhook (incoming messages from user) ────────────────────────
+# ── Telegram bot commands ─────────────────────────────────────────────────────
 @dashboard_bp.route("/telegram/webhook", methods=["POST"])
 def telegram_webhook():
-    """Handle incoming Telegram messages — user can command the bot."""
     try:
-        data = request.get_json(force=True, silent=True) or {}
-        msg  = data.get("message", {})
-        text = msg.get("text", "").strip().lower()
-        chat_id = str(msg.get("chat", {}).get("id", ""))
-
-        # Only respond to authorised chat
+        data    = request.get_json(force=True, silent=True) or {}
+        msg     = data.get("message",{})
+        text    = msg.get("text","").strip()
+        chat_id = str(msg.get("chat",{}).get("id",""))
         if chat_id != Config.TELEGRAM_CHAT_ID:
-            return jsonify({"ok": True})
-
-        from core.telegram import send_telegram
-
-        if text in ["/positions", "/pos"]:
+            return jsonify({"ok":True})
+        cmd = text.lower().split()[0] if text else ""
+        if cmd in ["/positions","/pos"]:
             positions = alpaca.get_positions()
             if not positions:
                 send_telegram("📊 <b>No open positions</b>")
             else:
                 lines = ["📊 <b>Open Positions</b>\n━━━━━━━━━━━━━━"]
                 for p in positions:
-                    pnl = float(p.get("unrealized_pl", 0))
-                    pct = float(p.get("unrealized_plpc", 0)) * 100
-                    lines.append(
-                        f"📌 <b>{p['symbol']}</b> | Qty: {p['qty']}\n"
-                        f"   Entry: ${p.get('avg_entry_price','?')} | Now: ${p.get('current_price','?')}\n"
-                        f"   P&L: <b>${pnl:+.2f} ({pct:+.2f}%)</b>"
-                    )
-                send_telegram("\n\n".join(lines))
-
-        elif text in ["/pnl", "/summary"]:
+                    pnl = float(p.get("unrealized_pl",0))
+                    pct = float(p.get("unrealized_plpc",0))*100
+                    lines.append(f"📌 <b>{p['symbol']}</b> Qty:{p['qty']}\n"
+                                 f"   P&L: <b>${pnl:+.2f} ({pct:+.2f}%)</b>")
+                send_telegram("\n".join(lines))
+        elif cmd in ["/pnl","/summary"]:
             from core.database import get_closed_summary
-            s = get_closed_summary()
-            if not s or not s.get("total_trades"):
-                send_telegram("📋 No closed trades yet.")
-            else:
-                wr = (s["winners"] / s["total_trades"] * 100) if s["total_trades"] else 0
-                send_telegram(
-                    f"📋 <b>P&L Summary</b>\n━━━━━━━━━━━━━━\n"
-                    f"Total Trades: <b>{s['total_trades']}</b>\n"
-                    f"Win Rate: <b>{wr:.1f}%</b>\n"
-                    f"Total P&L: <b>${s['total_pnl']:+.2f}</b>\n"
-                    f"Best: <b>${s['best_trade']:+.2f}</b>\n"
-                    f"Worst: <b>${s['worst_trade']:+.2f}</b>"
-                )
-
-        elif text in ["/account", "/balance"]:
+            s  = get_closed_summary()
+            wr = (s["winners"]/s["total_trades"]*100) if s.get("total_trades") else 0
+            send_telegram(f"📋 <b>P&L Summary</b>\n━━━━━━━━━━━━━━\n"
+                          f"Trades:{s.get('total_trades',0)} WinRate:<b>{wr:.1f}%</b>\n"
+                          f"Total P&L:<b>${s.get('total_pnl',0):+.2f}</b>")
+        elif cmd in ["/account","/balance"]:
             acc = alpaca.get_account()
-            pnl = float(acc.get("equity", 0)) - float(acc.get("last_equity", 0))
-            send_telegram(
-                f"💼 <b>Account</b>\n━━━━━━━━━━━━━━\n"
-                f"Portfolio: <b>${float(acc.get('portfolio_value',0)):,.2f}</b>\n"
-                f"Buying Power: <b>${float(acc.get('buying_power',0)):,.2f}</b>\n"
-                f"Today P&L: <b>${pnl:+.2f}</b>"
-            )
-
-        elif text in ["/closeall", "/close_all"]:
+            pnl = float(acc.get("equity",0)) - float(acc.get("last_equity",0))
+            send_telegram(f"💼 <b>Account</b>\n"
+                          f"Portfolio: <b>${float(acc.get('portfolio_value',0)):,.2f}</b>\n"
+                          f"Today P&L: <b>${pnl:+.2f}</b>")
+        elif cmd == "/closeall":
             alpaca.close_all_positions()
-            send_telegram("🚨 <b>ALL POSITIONS CLOSED</b> via Telegram command.")
-
-        elif text.startswith("/close "):
-            sym = text.split(" ")[1].upper()
+            send_telegram("🚨 <b>ALL POSITIONS CLOSED</b>")
+        elif cmd == "/close" and len(text.split()) > 1:
+            sym = text.split()[1].upper()
             try:
-                pos = alpaca.get_position(sym)
-                if pos:
-                    alpaca.close_position(sym)
-                    send_telegram(f"✅ <b>{sym}</b> position closed.")
-                else:
-                    send_telegram(f"⚠️ No open position found for {sym}.")
+                alpaca.close_position(sym)
+                send_telegram(f"✅ <b>{sym}</b> closed.")
             except Exception as ex:
-                send_telegram(f"❌ Failed to close {sym}: {str(ex)[:100]}")
-
-        elif text in ["/help", "/start"]:
-            send_telegram(
-                "🤖 <b>Trading Bot Commands</b>\n━━━━━━━━━━━━━━\n"
-                "/positions — view open positions\n"
-                "/pnl — P&L summary\n"
-                "/account — account balance\n"
-                "/close AAPL — close a specific stock\n"
-                "/closeall — close ALL positions\n"
-                "/help — this message"
-            )
+                send_telegram(f"❌ Failed: {str(ex)[:100]}")
         else:
-            send_telegram(
-                "❓ Unknown command. Send /help for the list of commands."
-            )
-
-        return jsonify({"ok": True})
-
+            send_telegram("🤖 Commands: /positions /pnl /account /close AAPL /closeall")
+        return jsonify({"ok":True})
     except Exception as ex:
-        logger.error(f"Telegram webhook error: {ex}")
-        return jsonify({"ok": True})
+        logger.error(f"Telegram webhook: {ex}")
+        return jsonify({"ok":True})
+
+@dashboard_bp.route("/health")
+def health():
+    return jsonify({"status":"ok","message":"Trading bot running"})
