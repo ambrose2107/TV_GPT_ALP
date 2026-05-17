@@ -242,30 +242,84 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <label style="margin-right:10px"><input type="checkbox" id="tf1W">  1W</label>
     </div>
 
-    <div class="sub-tabs">
+    <div class="sub-tabs" id="ana-subtabs">
       <div class="stab on" onclick="anaSub('signals',0)">📊 Signal Grid</div>
       <div class="stab"    onclick="anaSub('charts',1)">📈 Charts</div>
-      <div class="stab"    onclick="anaSub('compare',2)">⚖️ Compare</div>
+      <div class="stab"    onclick="anaSub('ema',2)">📉 EMA Overlay</div>
+      <div class="stab"    onclick="anaSub('compare',3)">⚖️ Compare</div>
     </div>
 
+    <!-- SIGNAL GRID -->
     <div id="ana-signals"><div style="color:#8b949e;padding:20px">Enter symbols and click Analyze.</div></div>
 
+    <!-- CHARTS TAB -->
     <div id="ana-charts" style="display:none">
-      <div class="row" style="margin-bottom:10px">
-        <select id="chart-period"><option value="1mo">1 Month</option><option value="3mo" selected>3 Months</option><option value="6mo">6 Months</option><option value="1y">1 Year</option></select>
-        <button class="btn btn-b" onclick="loadCharts()">Load Charts</button>
+      <div class="row" style="margin-bottom:12px">
+        <select id="chart-period">
+          <option value="1mo">1 Month</option>
+          <option value="3mo" selected>3 Months</option>
+          <option value="6mo">6 Months</option>
+          <option value="1y">1 Year</option>
+          <option value="3y">3 Years</option>
+          <option value="5y">5 Years</option>
+          <option value="10y">10 Years</option>
+        </select>
+        <button class="btn btn-b" onclick="loadCharts()">📈 Load Charts</button>
+        <span id="chart-source" style="font-size:11px;color:#8b949e;align-self:center"></span>
       </div>
       <div id="charts-wrap"></div>
     </div>
 
+    <!-- EMA OVERLAY TAB -->
+    <div id="ana-ema" style="display:none">
+      <div class="row" style="margin-bottom:10px;flex-wrap:wrap">
+        <input type="text" id="ema-sym" placeholder="Symbol e.g. AAPL" style="max-width:140px" value="AAPL">
+        <select id="ema-period">
+          <option value="3mo">3 Months</option>
+          <option value="6mo">6 Months</option>
+          <option value="1y" selected>1 Year</option>
+          <option value="3y">3 Years</option>
+          <option value="5y">5 Years</option>
+          <option value="10y">10 Years</option>
+        </select>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ema-9"   checked> <span style="color:#f59e0b">EMA 9</span></label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ema-21"  checked> <span style="color:#22c55e">EMA 21</span></label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ema-63"  checked> <span style="color:#ef4444">EMA 63</span></label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ema-200"> <span style="color:#8b5cf6">EMA 200</span></label>
+        <button class="btn btn-b" onclick="loadEmaChart()" id="ema-btn">📉 Show EMA Chart</button>
+      </div>
+      <div id="ema-info" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px"></div>
+      <div style="position:relative;height:380px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px">
+        <canvas id="ema-chart" aria-label="EMA overlay chart"></canvas>
+      </div>
+      <div style="font-size:11px;color:#8b949e;margin-top:8px">
+        💡 EMA 9 = short trend | EMA 21 = medium trend | EMA 63 = quarterly trend | EMA 200 = long-term trend
+      </div>
+    </div>
+
+    <!-- COMPARE TAB -->
     <div id="ana-compare" style="display:none">
       <div class="row">
         <input type="text" id="cmp-syms" placeholder="AAPL,MSFT,NVDA,TSLA" value="AAPL,MSFT,NVDA">
-        <select id="cmp-period"><option value="1mo">1M</option><option value="3mo" selected>3M</option><option value="6mo">6M</option><option value="1y">1Y</option></select>
-        <button class="btn btn-b" onclick="runCompare()">Compare</button>
+        <select id="cmp-period">
+          <option value="1mo">1M</option>
+          <option value="3mo" selected>3M</option>
+          <option value="6mo">6M</option>
+          <option value="1y">1Y</option>
+          <option value="3y">3Y</option>
+          <option value="5y">5Y</option>
+          <option value="10y">10Y</option>
+        </select>
+        <button class="btn btn-b" onclick="runCompare()">⚖️ Compare</button>
       </div>
-      <div class="cmp-wrap"><canvas id="cmp-chart" aria-label="Performance comparison chart"></canvas></div>
-      <div class="legend" id="cmp-legend"></div>
+      <div style="position:relative;height:300px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px">
+        <canvas id="cmp-chart" aria-label="Stock comparison chart"></canvas>
+      </div>
+      <div class="legend" id="cmp-legend" style="margin-top:8px"></div>
     </div>
   </div>
 </div>
@@ -410,8 +464,10 @@ function switchTab(idx, name) {
   if(name==='hist') loadHistory();
 }
 function anaSub(name, idx) {
-  ['signals','charts','compare'].forEach(n=>$('ana-'+n).style.display=n===name?'block':'none');
-  document.querySelectorAll('#pane-ana .stab').forEach((t,i)=>t.classList.toggle('on',i===idx));
+  ['signals','charts','ema','compare'].forEach(n=>{
+    const el=$('ana-'+n); if(el) el.style.display=n===name?'block':'none';
+  });
+  document.querySelectorAll('#ana-subtabs .stab').forEach((t,i)=>t.classList.toggle('on',i===idx));
 }
 function resSub(name, idx) {
   ['inst','earn','sect','ins'].forEach(n=>$('res-'+n).style.display=n===name?'block':'none');
@@ -672,105 +728,218 @@ function renderAnaGrid(results, tfs) {
   $('ana-signals').innerHTML=html;
 }
 
-// ── CHARTS ───────────────────────────────────────────────────────────────────
+// ── CHART UTILS ─────────────────────────────────────────────────────────────
+function destroyChart(ref) { if(ref){ try{ref.destroy();}catch(e){} } return null; }
+
+// ── CHARTS TAB ───────────────────────────────────────────────────────────────
 async function loadCharts() {
-  const syms   = lastAnalyzeSymbols.length ? lastAnalyzeSymbols :
-    $('ana-syms').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  const syms   = (lastAnalyzeSymbols.length ? lastAnalyzeSymbols :
+    $('ana-syms').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean)).slice(0,6);
   const period = $('chart-period').value;
   const wrap   = $('charts-wrap');
-  wrap.innerHTML = '<div class="loading"><span class="spin"></span> Loading charts...</div>';
+  if(!syms.length){ alert('Enter symbols and click Analyze first'); return; }
 
-  anaCharts.forEach(c=>c.destroy());
+  wrap.innerHTML = '<div class="loading"><span class="spin"></span> Loading charts...</div>';
+  anaCharts.forEach(c=>{ try{c.destroy();}catch(e){} });
   anaCharts=[];
 
-  let gridHtml = '<div class="ana-grid">';
-  syms.slice(0,6).forEach((sym,i)=>{
-    gridHtml+=`<div class="ana-card"><h3>${sym} <span style="font-size:11px;color:#8b949e">${period}</span></h3>
-      <div class="chart-wrap"><canvas id="ac-${i}" aria-label="${sym} price chart"></canvas></div></div>`;
+  let grid = '<div class="ana-grid">';
+  syms.forEach((sym,i)=>{
+    grid+=`<div class="ana-card">
+      <h3>${sym} <span style="font-size:11px;color:#8b949e">${period}</span>
+        <span id="src-${i}" style="font-size:10px;color:#8b949e;margin-left:4px"></span>
+      </h3>
+      <div class="chart-wrap"><canvas id="ac-${i}"></canvas></div>
+    </div>`;
   });
-  gridHtml+='</div>';
-  wrap.innerHTML=gridHtml;
+  grid+='</div>';
+  wrap.innerHTML=grid;
 
-  for(let i=0;i<Math.min(syms.length,6);i++) {
+  for(let i=0;i<syms.length;i++) {
     try {
       const d = await apiPost('/api/chart_data',{symbol:syms[i], period});
-      if(d.error){continue;}
-      const closes = d.close||[];
-      const dates  = d.dates||[];
-      const ctx    = $('ac-'+i);
+      if(d.error){ continue; }
+      const srcEl = $('src-'+i);
+      if(srcEl) srcEl.textContent = '('+d.source+')';
+      const ctx = $('ac-'+i);
       if(!ctx) continue;
-      const c = new Chart(ctx,{
+      // destroy any existing chart on this canvas
+      const existing = Chart.getChart(ctx);
+      if(existing) existing.destroy();
+
+      const c = new Chart(ctx, {
         type:'line',
-        data:{
-          labels:dates,
-          datasets:[{
-            label:syms[i],
-            data:closes,
-            borderColor:COLORS[i%COLORS.length],
-            backgroundColor:COLORS[i%COLORS.length]+'18',
-            borderWidth:1.5,
-            pointRadius:0,
-            fill:true,
-            tension:0.3,
-          }]
-        },
+        data:{labels: d.dates||[], datasets:[{
+          label: syms[i], data: d.close||[],
+          borderColor: COLORS[i%COLORS.length],
+          backgroundColor: COLORS[i%COLORS.length]+'15',
+          borderWidth:1.5, pointRadius:0, fill:true, tension:0.2,
+        }]},
         options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+          responsive:true, maintainAspectRatio:false,
+          interaction:{mode:'index',intersect:false},
+          plugins:{
+            legend:{display:false},
+            tooltip:{callbacks:{label:c=>`${c.dataset.label}: $${(c.raw||0).toFixed(2)}`}}
+          },
           scales:{
-            x:{ticks:{maxTicksLimit:6,maxRotation:0},grid:{display:false}},
-            y:{ticks:{callback:v=>'$'+v.toFixed(0)},grid:{color:'#21262d'}}
+            x:{ticks:{maxTicksLimit:6,maxRotation:0,font:{size:10}},grid:{display:false}},
+            y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10}},grid:{color:'#21262d'}}
           }
         }
       });
       anaCharts.push(c);
-    } catch(e){ console.warn('Chart error',syms[i],e); }
+    } catch(e){ console.warn('Chart',syms[i],e); }
   }
 }
 
-// ── COMPARE ──────────────────────────────────────────────────────────────────
+// ── EMA OVERLAY TAB ──────────────────────────────────────────────────────────
+let emaChart = null;
+async function loadEmaChart() {
+  const sym    = ($('ema-sym').value||'').trim().toUpperCase();
+  const period = $('ema-period').value;
+  if(!sym){ alert('Enter a symbol'); return; }
+
+  const btn = $('ema-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  $('ema-info').innerHTML='';
+
+  try {
+    const d = await apiPost('/api/chart_data',{symbol:sym, period});
+    if(d.error){ alert('Error: '+d.error); return; }
+
+    const ctx = $('ema-chart');
+    // Destroy existing chart on this canvas
+    const existing = Chart.getChart(ctx);
+    if(existing) existing.destroy();
+    emaChart = null;
+
+    const labels   = d.dates||[];
+    const closes   = d.close||[];
+    const datasets = [{
+      label:'Price', data:closes,
+      borderColor:'#94a3b8', backgroundColor:'#94a3b822',
+      borderWidth:1, pointRadius:0, fill:true, tension:0.2, order:10,
+    }];
+
+    const emaConfig = [
+      {key:'ema9',  label:'EMA 9',   color:'#f59e0b', show:$('ema-9')?.checked},
+      {key:'ema21', label:'EMA 21',  color:'#22c55e', show:$('ema-21')?.checked},
+      {key:'ema63', label:'EMA 63',  color:'#ef4444', show:$('ema-63')?.checked},
+      {key:'ema200',label:'EMA 200', color:'#8b5cf6', show:$('ema-200')?.checked},
+    ];
+
+    let infoHtml = `<span style="color:#8b949e">Symbol: <strong style="color:#e6edf3">${sym}</strong></span>
+      <span style="color:#8b949e">Bars: ${d.bar_count||closes.length}</span>
+      <span style="color:#8b949e">Source: <strong class="${d.source==='demo'?'y':'g'}">${d.source}</strong></span>`;
+
+    emaConfig.forEach((cfg,i)=>{
+      if(!cfg.show || !d[cfg.key]?.length) return;
+      datasets.push({
+        label:cfg.label, data:d[cfg.key],
+        borderColor:cfg.color, backgroundColor:'transparent',
+        borderWidth:1.5, pointRadius:0, tension:0.2, order:i,
+        borderDash: cfg.key==='ema200'?[4,4]:[],
+      });
+      // Last EMA value
+      const last = d[cfg.key].filter(Boolean).slice(-1)[0];
+      const price= closes.filter(Boolean).slice(-1)[0];
+      const diff = last && price ? ((price-last)/last*100).toFixed(2) : null;
+      infoHtml += `<span>${cfg.label}: <strong style="color:${cfg.color}">$${last?.toFixed(2)||'N/A'}</strong>
+        ${diff!=null?`<span class="${parseFloat(diff)>=0?'g':'r'}">(${parseFloat(diff)>=0?'+':''}${diff}%)</span>`:''}
+      </span>`;
+    });
+
+    $('ema-info').innerHTML = infoHtml;
+
+    emaChart = new Chart(ctx,{
+      type:'line',
+      data:{labels, datasets},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{
+          legend:{display:true, position:'top',
+            labels:{color:'#8b949e',font:{size:11},boxWidth:12,padding:12}},
+          tooltip:{callbacks:{
+            label:c=>`${c.dataset.label}: $${(c.raw||0).toFixed(2)}`
+          }}
+        },
+        scales:{
+          x:{ticks:{maxTicksLimit:8,maxRotation:0,font:{size:10},color:'#8b949e'},
+             grid:{color:'#21262d'}},
+          y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},
+             grid:{color:'#21262d'}}
+        }
+      }
+    });
+  } catch(e){
+    $('ema-info').innerHTML=`<span style="color:#f85149">Error: ${e.message}</span>`;
+  } finally {
+    btn.disabled=false; btn.textContent='📉 Show EMA Chart';
+  }
+}
+
+// ── COMPARE TAB ───────────────────────────────────────────────────────────────
 async function runCompare() {
   const raw    = $('cmp-syms').value;
   const syms   = raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean).slice(0,8);
   const period = $('cmp-period').value;
   if(!syms.length){ alert('Enter symbols'); return; }
 
-  if(cmpChart){ cmpChart.destroy(); cmpChart=null; }
-  $('cmp-legend').innerHTML='<span class="spin"></span>';
+  // Destroy existing compare chart
+  const ctx = $('cmp-chart');
+  const existing = Chart.getChart(ctx);
+  if(existing) existing.destroy();
+  cmpChart = null;
+
+  $('cmp-legend').innerHTML='<span class="spin"></span> Loading...';
 
   try {
     const d = await apiPost('/api/compare',{symbols:syms, period});
-    const datasets=[];
-    const allDates=[];
+    const datasets=[], allDates=[];
     syms.forEach((sym,i)=>{
       if(!d[sym]) return;
       if(!allDates.length) allDates.push(...(d[sym].dates||[]));
       datasets.push({
-        label:sym,
-        data:d[sym].norm,
+        label:sym, data:d[sym].norm,
         borderColor:COLORS[i%COLORS.length],
         backgroundColor:'transparent',
-        borderWidth:2,
-        pointRadius:0,
-        tension:0.3,
+        borderWidth:2, pointRadius:0, tension:0.2,
       });
     });
-    const ctx=$('cmp-chart');
-    cmpChart=new Chart(ctx,{
+
+    cmpChart = new Chart(ctx,{
       type:'line',
       data:{labels:allDates, datasets},
       options:{
-        responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw!=null?ctx.raw.toFixed(2):'—'}%`}}},
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{
+            title:items=>items[0].label,
+            label:c=>`${c.dataset.label}: ${c.raw!=null?(c.raw>=0?'+':'')+c.raw.toFixed(2):'—'}%`
+          }}
+        },
         scales:{
-          x:{ticks:{maxTicksLimit:8,maxRotation:0},grid:{display:false}},
-          y:{ticks:{callback:v=>v.toFixed(1)+'%'},grid:{color:'#21262d'},
-             title:{display:true,text:'% Return (normalised)',color:'#8b949e',font:{size:11}}}
+          x:{ticks:{maxTicksLimit:8,maxRotation:0,font:{size:10},color:'#8b949e'},
+             grid:{display:false}},
+          y:{ticks:{callback:v=>(v>=0?'+':'')+v.toFixed(1)+'%',font:{size:10},color:'#8b949e'},
+             grid:{color:'#21262d'},
+             title:{display:true,text:'% Return from start',color:'#8b949e',font:{size:11}}}
         }
       }
     });
-    $('cmp-legend').innerHTML=syms.map((s,i)=>`<span><span class="legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${s}</span>`).join('');
-  } catch(e){ $('cmp-legend').innerHTML=`<span style="color:#f85149">Error: ${e.message}</span>`; }
+
+    const srcNote = Object.values(d)[0]?.source||'demo';
+    $('cmp-legend').innerHTML=
+      syms.map((s,i)=>`<span><span class="legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${s}</span>`).join('')
+      + `<span style="color:#8b949e;font-size:10px">source: ${srcNote}</span>`;
+
+  } catch(e){
+    $('cmp-legend').innerHTML=`<span style="color:#f85149">Error: ${e.message}</span>`;
+  }
 }
 
 // ── RESEARCH: INSTITUTIONAL ───────────────────────────────────────────────────

@@ -176,92 +176,115 @@ def _gen_price_series(seed_price: float, n: int, vol: float = 0.015) -> list:
     return prices
 
 
-def demo_bars(symbol: str, n: int = 200) -> list:
-    """Generate realistic demo OHLCV bars."""
+def demo_bars(symbol: str, n: int = 200, weekly: bool = False) -> list:
+    """Generate realistic demo OHLCV bars with correct dates going back from today."""
     seed = {"AAPL":182,"MSFT":415,"NVDA":875,"TSLA":175,"AMD":160,
             "META":490,"GOOGL":175,"JPM":205,"SPY":520,"QQQ":440,
             "XLK":215,"XLV":140,"XLF":42,"XLY":185,"XLI":125,
             "XLC":95,"XLP":78,"XLE":90,"XLB":88,"XLU":68,"XLRE":38,
-            "MU":110,"AMZN":185,"NFLX":625,"CRM":290}.get(symbol.upper(), 100)
+            "MU":110,"AMZN":185,"NFLX":625,"CRM":290,"NVDA":875,
+            "SOXX":220,"GLD":195,"SLV":28,"USO":75,"QQQ":440,
+            "IWM":195,"DIA":385}.get(symbol.upper(), 100)
     closes = _gen_price_series(seed, n)
-    bars = []
-    base_ts = datetime.now(timezone.utc) - timedelta(days=n)
-    for i, c in enumerate(closes):
-        o = closes[i-1] if i > 0 else c
+    bars   = []
+    now    = datetime.now(timezone.utc)
+    step   = timedelta(weeks=1) if weekly else timedelta(days=1)
+    # Start from n bars ago, skip weekends for daily
+    count  = 0
+    day    = now - step * n
+    for i in range(n * 2):  # extra iterations to skip weekends
+        if len(bars) >= n:
+            break
+        day += step
+        if not weekly and day.weekday() >= 5:  # skip Sat/Sun
+            continue
+        c = closes[count] if count < len(closes) else closes[-1]
+        count += 1
+        o = closes[count-2] if count > 1 else c
         h = max(o, c) * (1 + random.uniform(0, 0.008))
         l = min(o, c) * (1 - random.uniform(0, 0.008))
         bars.append({
-            "t": (base_ts + timedelta(days=i)).isoformat(),
-            "o": round(o, 2), "h": round(h, 2),
-            "l": round(l, 2), "c": c,
-            "v": int(random.uniform(5e6, 80e6))
+            "t":      day.strftime("%Y-%m-%dT00:00:00+00:00"),
+            "o":      round(o,2), "h": round(h,2),
+            "l":      round(l,2), "c": c,
+            "v":      int(random.uniform(5e6, 80e6)),
+            "source": "demo"
         })
     return bars
 
 
 # ── UNIFIED get_bars (tries Alpaca → Yahoo → Demo) ───────────────────────────
 ALPACA_TF_MAP = {
-    "5m":  ("5Min",  35),
-    "15m": ("15Min", 100),
-    "1h":  ("1Hour", 200),
-    "4h":  ("1Hour", 400),
+    "5m":  ("5Min",  100),
+    "15m": ("15Min", 200),
+    "1h":  ("1Hour", 500),
+    "4h":  ("1Hour", 1000),
     "1D":  ("1Day",  252),
-    "1W":  ("1Week", 104),
+    "1W":  ("1Week", 260),
+    "3Y":  ("1Day",  756),
+    "5Y":  ("1Day",  1260),
+    "10Y": ("1Week", 520),
 }
 YAHOO_MAP = {
-    "5m":  ("5m",  "5d"),
-    "15m": ("15m", "5d"),
-    "1h":  ("1h",  "30d"),
-    "4h":  ("1h",  "60d"),
-    "1D":  ("1d",  "1y"),
-    "1W":  ("1wk", "5y"),
+    "5m":  ("5m",   "5d"),
+    "15m": ("15m",  "5d"),
+    "1h":  ("1h",   "30d"),
+    "4h":  ("1h",   "60d"),
+    "1D":  ("1d",   "1y"),
+    "1W":  ("1wk",  "5y"),
+    "3Y":  ("1d",   "3y"),
+    "5Y":  ("1d",   "5y"),
+    "10Y": ("1wk",  "10y"),
 }
 
 def get_bars(symbol: str, tf: str = "1D") -> list | None:
     """
-    Unified bar fetcher.
-    Returns list of dicts with keys: t, o, h, l, c, v
+    Unified bar fetcher. Returns list of dicts: t, o, h, l, c, v, source
+    tf options: 5m, 15m, 1h, 4h, 1D, 1W, 3Y, 5Y, 10Y
     """
-    symbol = symbol.upper()
-
-    # 1. Try Alpaca Data API
+    symbol  = symbol.upper()
+    weekly  = tf in ("1W","10Y")
     alp_tf, alp_limit = ALPACA_TF_MAP.get(tf, ("1Day", 252))
+    yh_interval, yh_period = YAHOO_MAP.get(tf, ("1d","1y"))
+
+    # 1. Alpaca Data API
     bars = alpaca_get_bars(symbol, alp_tf, alp_limit)
     if bars:
-        logger.info(f"✅ Alpaca data: {symbol} {tf} ({len(bars)} bars)")
+        for b in bars:
+            b["source"] = "alpaca"
+        logger.info(f"✅ Alpaca: {symbol} {tf} ({len(bars)} bars)")
         return bars
 
-    # 2. Try Yahoo Finance
-    yh_interval, yh_period = YAHOO_MAP.get(tf, ("1d","1y"))
+    # 2. Yahoo Finance
     chart = yahoo_get_chart(symbol, yh_interval, yh_period)
     if chart:
-        closes    = chart.get("close", [])
-        opens     = chart.get("open",  [])
-        highs     = chart.get("high",  [])
-        lows      = chart.get("low",   [])
+        closes    = chart.get("close",[])
+        opens     = chart.get("open", [])
+        highs     = chart.get("high", [])
+        lows      = chart.get("low",  [])
         volumes   = chart.get("volume",[])
-        timestamps= chart.get("timestamps", [])
+        timestamps= chart.get("timestamps",[])
         bars = []
         for i in range(len(closes)):
-            if closes[i] is None:
-                continue
+            if closes[i] is None: continue
             ts = datetime.fromtimestamp(timestamps[i], tz=timezone.utc).isoformat() \
                  if i < len(timestamps) else ""
             bars.append({
-                "t": ts,
-                "o": opens[i]   if opens[i]   is not None else closes[i],
-                "h": highs[i]   if highs[i]   is not None else closes[i],
-                "l": lows[i]    if lows[i]    is not None else closes[i],
-                "c": closes[i],
-                "v": volumes[i] if volumes[i]  is not None else 0,
+                "t":  ts,
+                "o":  opens[i]   if i<len(opens)   and opens[i]   is not None else closes[i],
+                "h":  highs[i]   if i<len(highs)   and highs[i]   is not None else closes[i],
+                "l":  lows[i]    if i<len(lows)     and lows[i]    is not None else closes[i],
+                "c":  closes[i],
+                "v":  volumes[i] if i<len(volumes)  and volumes[i] is not None else 0,
+                "source":"yahoo"
             })
-        logger.info(f"✅ Yahoo data: {symbol} {tf} ({len(bars)} bars)")
+        logger.info(f"✅ Yahoo: {symbol} {tf} ({len(bars)} bars)")
         return bars
 
-    # 3. Demo fallback
-    logger.warning(f"⚠️ Using DEMO data for {symbol} {tf} (live data unavailable in sandbox)")
-    n = ALPACA_TF_MAP.get(tf, ("1Day",200))[1]
-    return demo_bars(symbol, n)
+    # 3. Demo fallback (sandbox)
+    logger.warning(f"⚠️ Demo data: {symbol} {tf}")
+    n = alp_limit
+    return demo_bars(symbol, n, weekly=weekly)
 
 
 def get_quote_live(symbol: str) -> dict:

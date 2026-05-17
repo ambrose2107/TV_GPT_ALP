@@ -182,26 +182,51 @@ def api_chart_data():
     period = data.get("period","3mo")
     try:
         from core.market_data import get_bars
-        bars = get_bars(symbol, "1D")
+        # Map UI period strings to TF codes
+        PERIOD_MAP = {
+            "1mo":"1D","3mo":"1D","6mo":"1D","1y":"1D",
+            "3y":"3Y","5y":"5Y","10y":"10Y","1D":"1D",
+            "3Y":"3Y","5Y":"5Y","10Y":"10Y","1W":"1W"
+        }
+        tf   = PERIOD_MAP.get(period, "1D")
+        bars = get_bars(symbol, tf)
         if not bars:
             return jsonify({"error": "No data"}), 404
         from datetime import datetime
-        dates  = []
+        dates = []
         for b in bars:
             try:
                 dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
-                dates.append(dt.strftime("%m/%d"))
+                fmt = "%Y" if tf in ("10Y","5Y","3Y") else "%m/%d/%y" if tf in ("1W",) else "%m/%d/%y"
+                dates.append(dt.strftime(fmt))
             except:
                 dates.append("")
+        closes = [b.get("c") for b in bars]
+        # Compute EMAs
+        def ema_series(data, span):
+            k, s, result = 2/(span+1), data[0], []
+            for p in data:
+                if p is None: result.append(None); continue
+                s = p*k + s*(1-k)
+                result.append(round(s,2))
+            return result
+        c_clean = [c for c in closes if c is not None]
+        ema9  = ema_series(c_clean, 9)   if len(c_clean)>=9  else []
+        ema21 = ema_series(c_clean, 21)  if len(c_clean)>=21 else []
+        ema63 = ema_series(c_clean, 63)  if len(c_clean)>=63 else []
+        ema200= ema_series(c_clean, 200) if len(c_clean)>=200 else []
         return jsonify({
-            "symbol":  symbol,
+            "symbol":  symbol, "tf": tf,
             "dates":   dates,
             "open":    [b.get("o") for b in bars],
             "high":    [b.get("h") for b in bars],
             "low":     [b.get("l") for b in bars],
-            "close":   [b.get("c") for b in bars],
+            "close":   closes,
             "volume":  [b.get("v") for b in bars],
-            "source":  bars[0].get("source","unknown") if bars else "unknown",
+            "ema9":    ema9, "ema21": ema21,
+            "ema63":   ema63, "ema200": ema200,
+            "source":  bars[0].get("source","demo") if bars else "demo",
+            "bar_count": len(bars),
         })
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
@@ -219,23 +244,28 @@ def api_compare():
     try:
         from core.market_data import get_bars
         from datetime import datetime
+        PERIOD_MAP = {"1mo":"1D","3mo":"1D","6mo":"1D","1y":"1D",
+                      "3y":"3Y","5y":"5Y","10y":"10Y","1W":"1W"}
+        tf = PERIOD_MAP.get(period, "1D")
         result = {}
         for sym in symbols:
-            bars = get_bars(sym, "1D")
+            bars = get_bars(sym, tf)
             if not bars: continue
             dates, closes = [], []
             for b in bars:
                 try:
                     dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
-                    dates.append(dt.strftime("%m/%d"))
+                    fmt = "%Y-%m" if tf in ("5Y","10Y","3Y") else "%m/%d/%y"
+                    dates.append(dt.strftime(fmt))
                 except:
                     dates.append("")
                 closes.append(b.get("c"))
             base = next((c for c in closes if c), None)
             if not base: continue
             norm = [round((c/base-1)*100,2) if c else None for c in closes]
-            result[sym] = {"dates":dates, "norm":norm, "closes":closes,
-                           "source": bars[0].get("source","demo") if bars else "demo"}
+            result[sym] = {"dates":dates,"norm":norm,"closes":closes,
+                           "source": bars[0].get("source","demo") if bars else "demo",
+                           "tf": tf}
         return jsonify(result)
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
