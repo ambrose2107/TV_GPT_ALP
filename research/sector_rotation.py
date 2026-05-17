@@ -1,91 +1,116 @@
 """
-research/sector_rotation.py — Real sector rotation using free Yahoo Finance data
+research/sector_rotation.py — Real sector rotation using unified data engine
 """
-from core.data_engine import (get_sector_returns, get_etf_money_flow, TOP_ETFS_PER_SECTOR,
-                               SECTOR_ETFS, get_chart)
-from core.logger import get_logger
-from datetime import datetime, timedelta
 import time
+from datetime import datetime
+from core.market_data import get_bars, get_multi_quotes
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
+SECTOR_ETFS = {
+    "Technology":       "XLK",  "Healthcare":       "XLV",
+    "Financials":       "XLF",  "Consumer Discr.":  "XLY",
+    "Industrials":      "XLI",  "Communication":    "XLC",
+    "Consumer Staples": "XLP",  "Energy":           "XLE",
+    "Materials":        "XLB",  "Utilities":        "XLU",
+    "Real Estate":      "XLRE",
+}
+
+TOP_ETFS = {
+    "Technology":       ["QQQ","SOXX","IGV","VGT","ARKK"],
+    "Healthcare":       ["IBB","XBI","IHI","ARKG","IHF"],
+    "Financials":       ["KBE","KRE","IAI","KBWB","IYF"],
+    "Consumer Discr.":  ["XRT","RTH","FDIS","IBUY","VCR"],
+    "Industrials":      ["ITA","XAR","JETS","PAVE","VIS"],
+    "Communication":    ["FCOM","VOX","IYZ","SOCL","ESPO"],
+    "Consumer Staples": ["VDC","KXI","FSTA","IYK","PBJ"],
+    "Energy":           ["OIH","XOP","FCG","AMLP","IEZ"],
+    "Materials":        ["GDX","GDXJ","MOO","MXI","URNM"],
+    "Utilities":        ["VPU","FXU","IDU","FUTY","RYU"],
+    "Real Estate":      ["VNQ","IYR","SCHH","RWR","REZ"],
+}
+
+def _pct_return(bars, window):
+    closes = [b["c"] for b in bars if b.get("c")]
+    if len(closes) < window: return None
+    return round((closes[-1]/closes[-window]-1)*100, 2)
+
 def get_sector_rotation() -> dict:
-    """
-    Full sector rotation analysis:
-    - Current 30-day returns for all 11 sectors
-    - Same period 1 year ago
-    - Detects rotation (negative→positive or positive→negative flips)
-    - Top 5 ETFs per rotating sector by money flow
-    """
-    logger.info("Running sector rotation analysis...")
-    current = get_sector_returns(30)
-
-    # Get 1-year-ago returns by fetching longer history
-    prior = {}
-    for name, etf in SECTOR_ETFS.items():
-        try:
-            chart = get_chart(etf, "1d", "2y")
-            if not chart:
-                prior[name] = None
-                continue
-            closes = [c for c in chart["close"] if c is not None]
-            # ~252 trading days per year; 30-day window starting 1yr ago
-            if len(closes) < 282:
-                prior[name] = None
-                continue
-            ret = (closes[-252] / closes[-282] - 1) * 100
-            prior[name] = round(ret, 2)
-            time.sleep(0.1)
-        except Exception as e:
-            logger.warning(f"Prior return error {name}: {e}")
-            prior[name] = None
-
-    # Build sector summary + detect rotation
+    logger.info("Running sector rotation...")
     sectors = {}
-    for name in SECTOR_ETFS:
-        curr_ret = current.get(name, {}).get("return")
-        prev_ret = prior.get(name)
-        etf      = SECTOR_ETFS[name]
+    source  = "demo"
 
-        rotating    = False
-        strength_flip = False
-        if curr_ret is not None and prev_ret is not None:
-            rotating      = (prev_ret < 0 < curr_ret) or (prev_ret > 0 > curr_ret) or (curr_ret > prev_ret + 3)
-            strength_flip = (prev_ret < 0 < curr_ret)
+    for name, etf in SECTOR_ETFS.items():
+        bars = get_bars(etf, "1D")
+        if not bars:
+            sectors[name] = {"etf": etf, "return_30d": None, "return_1y_ago": None}
+            continue
+        if bars and bars[0].get("source") != "demo":
+            source = "live"
+
+        ret_30  = _pct_return(bars, 22)   # ~22 trading days
+        # 1yr ago: use bars from ~252 days back
+        ret_prior = None
+        if len(bars) >= 282:
+            prior_slice = bars[-282:-252]
+            if len(prior_slice) >= 22:
+                c = [b["c"] for b in prior_slice if b.get("c")]
+                if len(c) >= 2:
+                    ret_prior = round((c[-1]/c[0]-1)*100, 2)
+
+        rotating = False
+        flip     = False
+        if ret_30 is not None and ret_prior is not None:
+            rotating = (ret_prior < 0 < ret_30) or (ret_prior > 0 > ret_30) or (ret_30 > ret_prior + 3)
+            flip     = (ret_prior < 0 < ret_30)
 
         sectors[name] = {
             "etf":          etf,
-            "return_30d":   curr_ret,
-            "return_1y_ago":prev_ret,
+            "return_30d":   ret_30,
+            "return_1y_ago":ret_prior,
             "rotating":     rotating,
-            "flip":         strength_flip,
-            "direction":    "UP" if (curr_ret or 0) > 0 else "DOWN",
+            "flip":         flip,
         }
+        time.sleep(0.05)
 
-    # For rotating sectors, get top ETF money flows
+    # ETF money flows for rotating sectors
+    rotating = {k:v for k,v in sectors.items() if v.get("rotating")}
     etf_flows = {}
-    rotating_sectors = {k:v for k,v in sectors.items() if v["rotating"]}
-
-    for sec_name in list(rotating_sectors.keys())[:4]:
-        etfs   = TOP_ETFS_PER_SECTOR.get(sec_name, [])
-        flows  = []
-        for e in etfs:
-            f = get_etf_money_flow(e)
-            if "error" not in f:
-                flows.append(f)
-            time.sleep(0.1)
-        flows.sort(key=lambda x: x.get("money_flow", 0) or 0, reverse=True)
+    for sec_name in list(rotating.keys())[:4]:
+        etfs  = TOP_ETFS.get(sec_name, [])
+        flows = []
+        for etf in etfs:
+            bars = get_bars(etf, "1D")
+            if not bars: continue
+            closes = [b["c"] for b in bars if b.get("c")]
+            vol    = [b.get("v",0) for b in bars]
+            r10    = _pct_return(bars, 10)
+            r30    = _pct_return(bars, 22)
+            avg_vol= sum(vol[-10:])/10 if len(vol)>=10 else 0
+            price  = closes[-1] if closes else 0
+            flows.append({
+                "ticker":    etf,
+                "price":     round(price,2),
+                "return_10": r10,
+                "return_30": r30,
+                "avg_volume":int(avg_vol),
+                "money_flow":round(price*avg_vol/1e6,1),
+            })
+            time.sleep(0.05)
+        flows.sort(key=lambda x: x.get("money_flow",0) or 0, reverse=True)
         etf_flows[sec_name] = flows
 
     ranked = sorted(
-        [(k, v["return_30d"]) for k, v in sectors.items() if v["return_30d"] is not None],
+        [(k,v["return_30d"]) for k,v in sectors.items() if v["return_30d"] is not None],
         key=lambda x: x[1], reverse=True
     )
 
     return {
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "data_source": source,
         "sectors":   sectors,
-        "rotating":  rotating_sectors,
+        "rotating":  rotating,
         "etf_flows": etf_flows,
         "ranked":    ranked,
     }

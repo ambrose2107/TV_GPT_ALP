@@ -164,7 +164,10 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <div class="tab"     onclick="switchTab(5,'set')">⚙️ Settings</div>
 </div>
 
-<!-- ── DASHBOARD ─────────────────────────────────────────────────────────────── -->
+<!-- DATA SOURCE BANNER -->
+<div id="data-banner" style="display:none;padding:6px 20px;font-size:11px;border-bottom:1px solid #30363d"></div>
+
+<!-- __ DASHBOARD ─────────────────────────────────────────────────────────────── -->
 <div class="pane on" id="pane-dash">
   <div class="grid">
     <div class="card"><div class="lbl">Portfolio Value</div><div class="val" id="d-port">—</div></div>
@@ -1105,8 +1108,24 @@ async function apiPost(url, body) {
   return r.json();
 }
 
-// ── INIT ─────────────────────────────────────────────────────────────────────
-function loadAll() { loadAccount(); loadWebhooks(); loadPnl(); }
+// __ DATA STATUS
+async function loadDataStatus() {
+  try {
+    const d = await apiFetch('/api/data_status');
+    const banner = document.getElementById('data-banner');
+    if(!banner) return;
+    const isLive = d.alpaca_data==='live' || d.yahoo==='live';
+    const src = d.alpaca_data==='live' ? 'Alpaca Data API (live)' :
+                d.yahoo==='live'        ? 'Yahoo Finance (live)' :
+                'Demo mode — sandbox blocked. All data works live on Railway';
+    banner.style.display='block';
+    banner.style.color = isLive ? '#3fb950' : '#d29922';
+    banner.innerHTML = '📡 Data: <strong>' + src + '</strong>';
+  } catch(e){}
+}
+
+// __ INIT ─────────────────────────────────────────────────────────────────────
+function loadAll() { loadAccount(); loadWebhooks(); loadPnl(); loadDataStatus(); }
 $('wh-url').textContent = window.location.origin+'/webhook';
 loadAll();
 setInterval(loadAll, 30000);

@@ -166,7 +166,9 @@ def api_analyze():
     try:
         from core.analyzer import analyze_multiple
         results = analyze_multiple(symbols, timeframes)
-        return jsonify({"results": results, "timeframes": timeframes})
+        from core.market_data import data_source_status
+        return jsonify({"results": results, "timeframes": timeframes,
+                        "data_source": data_source_status()})
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
@@ -179,21 +181,27 @@ def api_chart_data():
     symbol = data.get("symbol","").upper()
     period = data.get("period","3mo")
     try:
-        from core.data_engine import get_chart
-        chart = get_chart(symbol, "1d", period)
-        if not chart:
+        from core.market_data import get_bars
+        bars = get_bars(symbol, "1D")
+        if not bars:
             return jsonify({"error": "No data"}), 404
-        # Return dates + OHLCV
         from datetime import datetime
-        dates  = [datetime.fromtimestamp(ts).strftime("%m/%d") for ts in chart["timestamps"]]
+        dates  = []
+        for b in bars:
+            try:
+                dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
+                dates.append(dt.strftime("%m/%d"))
+            except:
+                dates.append("")
         return jsonify({
             "symbol":  symbol,
             "dates":   dates,
-            "open":    chart["open"],
-            "high":    chart["high"],
-            "low":     chart["low"],
-            "close":   chart["close"],
-            "volume":  chart["volume"],
+            "open":    [b.get("o") for b in bars],
+            "high":    [b.get("h") for b in bars],
+            "low":     [b.get("l") for b in bars],
+            "close":   [b.get("c") for b in bars],
+            "volume":  [b.get("v") for b in bars],
+            "source":  bars[0].get("source","unknown") if bars else "unknown",
         })
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
@@ -209,21 +217,25 @@ def api_compare():
     if not symbols:
         return jsonify({"error":"No symbols"}), 400
     try:
-        from core.data_engine import get_chart
+        from core.market_data import get_bars
         from datetime import datetime
         result = {}
         for sym in symbols:
-            chart = get_chart(sym, "1d", period)
-            if not chart:
-                continue
-            dates  = [datetime.fromtimestamp(ts).strftime("%m/%d") for ts in chart["timestamps"]]
-            closes = chart["close"]
-            # Normalise to % return from start
-            base   = next((c for c in closes if c), None)
-            if not base:
-                continue
+            bars = get_bars(sym, "1D")
+            if not bars: continue
+            dates, closes = [], []
+            for b in bars:
+                try:
+                    dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
+                    dates.append(dt.strftime("%m/%d"))
+                except:
+                    dates.append("")
+                closes.append(b.get("c"))
+            base = next((c for c in closes if c), None)
+            if not base: continue
             norm = [round((c/base-1)*100,2) if c else None for c in closes]
-            result[sym] = {"dates": dates, "norm": norm, "closes": closes}
+            result[sym] = {"dates":dates, "norm":norm, "closes":closes,
+                           "source": bars[0].get("source","demo") if bars else "demo"}
         return jsonify(result)
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
@@ -329,3 +341,8 @@ def telegram_webhook():
 @dashboard_bp.route("/health")
 def health():
     return jsonify({"status":"ok","message":"Trading bot running"})
+
+@dashboard_bp.route("/api/data_status")
+def api_data_status():
+    from core.market_data import data_source_status
+    return jsonify(data_source_status())
