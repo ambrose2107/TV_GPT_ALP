@@ -214,48 +214,55 @@ def demo_bars(symbol: str, n: int = 200, weekly: bool = False) -> list:
 
 
 # ── UNIFIED get_bars (tries Alpaca → Yahoo → Demo) ───────────────────────────
-ALPACA_TF_MAP = {
-    "5m":  ("5Min",  100),
-    "15m": ("15Min", 200),
-    "1h":  ("1Hour", 500),
-    "4h":  ("1Hour", 1000),
-    "1D":  ("1Day",  252),
-    "1W":  ("1Week", 260),
-    "3Y":  ("1Day",  756),
-    "5Y":  ("1Day",  1260),
-    "10Y": ("1Week", 520),
-}
-YAHOO_MAP = {
-    "5m":  ("5m",   "5d"),
-    "15m": ("15m",  "5d"),
-    "1h":  ("1h",   "30d"),
-    "4h":  ("1h",   "60d"),
-    "1D":  ("1d",   "1y"),
-    "1W":  ("1wk",  "5y"),
-    "3Y":  ("1d",   "3y"),
-    "5Y":  ("1d",   "5y"),
-    "10Y": ("1wk",  "10y"),
+# TF → (alpaca_timeframe, bar_count, yahoo_interval, yahoo_period)
+# UI periods map directly to this config
+PERIOD_CONFIG = {
+    # Intraday
+    "5m":   ("5Min",  100,  "5m",  "5d"),
+    "15m":  ("15Min", 200,  "15m", "5d"),
+    "1h":   ("1Hour", 300,  "1h",  "30d"),
+    "4h":   ("1Hour", 500,  "1h",  "60d"),
+    # Daily
+    "1mo":  ("1Day",  22,   "1d",  "1mo"),
+    "3mo":  ("1Day",  66,   "1d",  "3mo"),
+    "6mo":  ("1Day",  132,  "1d",  "6mo"),
+    "1y":   ("1Day",  252,  "1d",  "1y"),
+    "1D":   ("1Day",  252,  "1d",  "1y"),   # analyzer default
+    # Weekly
+    "1W":   ("1Week", 52,   "1wk", "1y"),
+    "3y":   ("1Day",  756,  "1d",  "3y"),
+    "5y":   ("1Day",  1260, "1d",  "5y"),
+    "10y":  ("1Week", 520,  "1wk", "10y"),
+    # Aliases
+    "3Y":   ("1Day",  756,  "1d",  "3y"),
+    "5Y":   ("1Day",  1260, "1d",  "5y"),
+    "10Y":  ("1Week", 520,  "1wk", "10y"),
 }
 
-def get_bars(symbol: str, tf: str = "1D") -> list | None:
-    """
-    Unified bar fetcher. Returns list of dicts: t, o, h, l, c, v, source
-    tf options: 5m, 15m, 1h, 4h, 1D, 1W, 3Y, 5Y, 10Y
-    """
-    symbol  = symbol.upper()
-    weekly  = tf in ("1W","10Y")
-    alp_tf, alp_limit = ALPACA_TF_MAP.get(tf, ("1Day", 252))
-    yh_interval, yh_period = YAHOO_MAP.get(tf, ("1d","1y"))
+# Keep backward compat
+ALPACA_TF_MAP = {k: (v[0], v[1]) for k,v in PERIOD_CONFIG.items()}
+YAHOO_MAP     = {k: (v[2], v[3]) for k,v in PERIOD_CONFIG.items()}
 
-    # 1. Alpaca Data API
+def get_bars(symbol: str, period: str = "1y") -> list | None:
+    """
+    Unified bar fetcher. period = any key in PERIOD_CONFIG.
+    e.g: "1mo","3mo","6mo","1y","3y","5y","10y","5m","15m","1h","1D","1W"
+    Returns list of dicts: {t, o, h, l, c, v, source}
+    """
+    symbol = symbol.upper()
+    cfg    = PERIOD_CONFIG.get(period, PERIOD_CONFIG["1y"])
+    alp_tf, alp_limit, yh_interval, yh_period = cfg
+    weekly = period in ("1W","10Y","10y")
+
+    # 1. Alpaca Data API (primary)
     bars = alpaca_get_bars(symbol, alp_tf, alp_limit)
     if bars:
         for b in bars:
             b["source"] = "alpaca"
-        logger.info(f"✅ Alpaca: {symbol} {tf} ({len(bars)} bars)")
+        logger.info(f"✅ Alpaca: {symbol} {period} ({len(bars)} bars)")
         return bars
 
-    # 2. Yahoo Finance
+    # 2. Yahoo Finance (fallback)
     chart = yahoo_get_chart(symbol, yh_interval, yh_period)
     if chart:
         closes    = chart.get("close",[])
@@ -270,21 +277,20 @@ def get_bars(symbol: str, tf: str = "1D") -> list | None:
             ts = datetime.fromtimestamp(timestamps[i], tz=timezone.utc).isoformat() \
                  if i < len(timestamps) else ""
             bars.append({
-                "t":  ts,
-                "o":  opens[i]   if i<len(opens)   and opens[i]   is not None else closes[i],
-                "h":  highs[i]   if i<len(highs)   and highs[i]   is not None else closes[i],
-                "l":  lows[i]    if i<len(lows)     and lows[i]    is not None else closes[i],
-                "c":  closes[i],
-                "v":  volumes[i] if i<len(volumes)  and volumes[i] is not None else 0,
-                "source":"yahoo"
+                "t": ts,
+                "o": opens[i]   if i<len(opens)  and opens[i]   is not None else closes[i],
+                "h": highs[i]   if i<len(highs)  and highs[i]   is not None else closes[i],
+                "l": lows[i]    if i<len(lows)   and lows[i]    is not None else closes[i],
+                "c": closes[i],
+                "v": volumes[i] if i<len(volumes) and volumes[i] is not None else 0,
+                "source": "yahoo"
             })
-        logger.info(f"✅ Yahoo: {symbol} {tf} ({len(bars)} bars)")
+        logger.info(f"✅ Yahoo: {symbol} {period} ({len(bars)} bars)")
         return bars
 
-    # 3. Demo fallback (sandbox)
-    logger.warning(f"⚠️ Demo data: {symbol} {tf}")
-    n = alp_limit
-    return demo_bars(symbol, n, weekly=weekly)
+    # 3. Demo fallback (sandbox — all sources blocked)
+    logger.warning(f"⚠️ Demo: {symbol} {period} ({alp_limit} bars)")
+    return demo_bars(symbol, alp_limit, weekly=weekly)
 
 
 def get_quote_live(symbol: str) -> dict:

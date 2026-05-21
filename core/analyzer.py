@@ -226,6 +226,7 @@ def analyze_one_tf(bars: list) -> dict:
 
 
 # ── Multi-symbol multi-timeframe ──────────────────────────────────────────────
+# Supported timeframes for analyzer
 TF_LIST = ["5m","15m","1h","4h","1D","1W"]
 
 def analyze_symbol(symbol: str, timeframes: list = None) -> dict:
@@ -239,14 +240,13 @@ def analyze_symbol(symbol: str, timeframes: list = None) -> dict:
     except:
         pass
 
-    tf_results  = {}
-    all_scores  = []
+    tf_results = {}
+    all_scores = []
 
     for tf in timeframes:
-        if tf not in TF_LIST:
-            tf_results[tf] = {"error": "unknown timeframe"}
-            continue
-        bars = get_bars(symbol, tf)
+        # Map UI TF names to PERIOD_CONFIG keys
+        period_key = tf  # they match directly now
+        bars = get_bars(symbol, period_key)
         if not bars:
             tf_results[tf] = {"error": "no data"}
             continue
@@ -263,7 +263,7 @@ def analyze_symbol(symbol: str, timeframes: list = None) -> dict:
         "price":         quote.get("price") if quote else None,
         "source":        quote.get("source","demo") if quote else "demo",
         "timeframes":    tf_results,
-        "overall_score": round(oa,2),
+        "overall_score": round(oa, 2),
         "overall_label": ol,
         "overall_css":   oc,
     }
@@ -276,5 +276,5 @@ def analyze_multiple(symbols: list, timeframes: list = None) -> list:
             r = analyze_symbol(sym.upper().strip(), timeframes)
             results.append(r)
         except Exception as e:
-            results.append({"symbol":sym.upper(),"error":str(e),"timeframes":{}})
+            results.append({"symbol": sym.upper(), "error": str(e), "timeframes": {}})
     return results

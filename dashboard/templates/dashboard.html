@@ -149,8 +149,21 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 
 <div class="hdr">
   <h1>📈 OptiTrade Bot <span class="badge" id="mode-badge">PAPER</span></h1>
-  <div style="display:flex;align-items:center;gap:16px">
+  <div style="display:flex;align-items:center;gap:12px">
     <div class="live"><span class="dot"></span>Live</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#8b949e">
+      Auto-refresh:
+      <select id="refresh-select" onchange="setAutoRefresh()" style="font-size:11px;padding:3px 6px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3">
+        <option value="0">Off</option>
+        <option value="1">1s</option>
+        <option value="5">5s</option>
+        <option value="10">10s</option>
+        <option value="15">15s</option>
+        <option value="30" selected>30s</option>
+        <option value="60">60s</option>
+      </select>
+      <span id="refresh-countdown" style="min-width:24px;color:#58a6ff"></span>
+    </div>
     <nav><a href="/logout">Logout</a></nav>
   </div>
 </div>
@@ -161,7 +174,9 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <div class="tab"     onclick="switchTab(2,'hist')">📋 History</div>
   <div class="tab"     onclick="switchTab(3,'ana')">🔬 Analyzer Pro</div>
   <div class="tab"     onclick="switchTab(4,'res')">🧠 Research</div>
-  <div class="tab"     onclick="switchTab(5,'set')">⚙️ Settings</div>
+  <div class="tab"     onclick="switchTab(5,'ses')">🕐 Sessions</div>
+  <div class="tab"     onclick="switchTab(6,'eod')">📅 EOD Journal</div>
+  <div class="tab"     onclick="switchTab(7,'set')">⚙️ Settings</div>
 </div>
 
 <!-- DATA SOURCE BANNER -->
@@ -394,6 +409,41 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 </div>
 
+<!-- ── MARKET SESSIONS ───────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-ses">
+  <div class="sec">
+    <div class="sec-hdr"><h2>🕐 Market Session Analysis — Asia / London / New York</h2></div>
+    <p style="font-size:11px;color:#8b949e;margin-bottom:12px">
+      ICT concept: Asia accumulates/consolidates, London distributes or reverses, NY breaks out.
+      Identifies where smart money is active each session.
+    </p>
+    <div class="row">
+      <input type="text" id="ses-sym" placeholder="Symbol e.g. SPY, AAPL" value="SPY" style="max-width:150px">
+      <button class="btn btn-b" onclick="loadSessions()" id="ses-btn">🔍 Analyze Sessions</button>
+    </div>
+    <div id="ses-out"></div>
+  </div>
+</div>
+
+<!-- ── EOD JOURNAL ────────────────────────────────────────────────────────────── -->
+<div class="pane" id="pane-eod">
+  <div class="sec">
+    <div class="sec-hdr"><h2>📅 EOD Trading Journal & P&L Calendar</h2></div>
+    <div class="row" style="margin-bottom:14px">
+      <input type="date" id="eod-date" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 11px;font-size:12px">
+      <button class="btn btn-b" onclick="exportEOD()">📥 Export Day Journal</button>
+      <button class="btn btn-g" onclick="loadCalendar()">📅 Load Calendar</button>
+    </div>
+    <div id="eod-calendar-wrap" style="margin-bottom:16px"></div>
+    <div class="sec" style="background:#0d1117">
+      <div class="sec-hdr"><h2>📈 Equity Curve</h2></div>
+      <div style="position:relative;height:220px">
+        <canvas id="equity-chart" aria-label="Equity curve"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── SETTINGS ────────────────────────────────────────────────────────────────── -->
 <div class="pane" id="pane-set">
   <div class="sec">
@@ -459,9 +509,11 @@ const empty = msg => `<div class="loading">${msg||'No data'}</div>`;
 function switchTab(idx, name) {
   document.querySelectorAll('#main-tabs .tab').forEach((t,i)=>t.classList.toggle('on',i===idx));
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
-  $('pane-'+name).classList.add('on');
+  const pane=$('pane-'+name);
+  if(pane) pane.classList.add('on');
   if(name==='pos')  loadPositions();
   if(name==='hist') loadHistory();
+  if(name==='eod')  { const t=new Date().toISOString().slice(0,10); if($('eod-date'))$('eod-date').value=t; loadCalendar(); }
 }
 function anaSub(name, idx) {
   ['signals','charts','ema','compare'].forEach(n=>{
@@ -1296,8 +1348,155 @@ async function loadDataStatus() {
 // __ INIT ─────────────────────────────────────────────────────────────────────
 function loadAll() { loadAccount(); loadWebhooks(); loadPnl(); loadDataStatus(); }
 $('wh-url').textContent = window.location.origin+'/webhook';
+// Set today's date for EOD journal
+const todayDate = new Date().toISOString().slice(0,10);
+if($('eod-date')) $('eod-date').value = todayDate;
 loadAll();
-setInterval(loadAll, 30000);
+setAutoRefresh();  // starts with 30s default
+
+// ── AUTO-REFRESH ──────────────────────────────────────────────────────────────
+let refreshTimer=null, rCountdown=30, rSecs=30;
+function setAutoRefresh() {
+  const sel=$('refresh-select'); if(!sel) return;
+  rSecs=parseInt(sel.value)||0; rCountdown=rSecs;
+  if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
+  const cEl=$('refresh-countdown');
+  if(rSecs===0){if(cEl)cEl.textContent=''; return;}
+  if(cEl) cEl.textContent=rSecs+'s';
+  refreshTimer=setInterval(()=>{
+    rCountdown--;
+    if(cEl) cEl.textContent=rCountdown+'s';
+    if(rCountdown<=0){rCountdown=rSecs; loadAll();}
+  },1000);
+}
+
+// ── SESSIONS ─────────────────────────────────────────────────────────────────
+async function loadSessions() {
+  const sym=($('ses-sym').value||'SPY').trim().toUpperCase();
+  const btn=$('ses-btn'),el=$('ses-out');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Analyzing...';
+  el.innerHTML='<div class="loading"><span class="spin"></span> Fetching session data...</div>';
+  try {
+    const d=await apiPost('/api/sessions',{symbol:sym});
+    renderSessions(d);
+  } catch(e){el.innerHTML=`<div style="color:#f85149">Error: ${e.message}</div>`;}
+  finally{btn.disabled=false;btn.textContent='🔍 Analyze Sessions';}
+}
+
+function renderSessions(d) {
+  const el=$('ses-out');
+  const SC={Asia:{bg:'#1a2a3a',br:'#58a6ff',lbl:'🌏 Asia (00:00–08:00 UTC)'},
+            London:{bg:'#1a2d1a',br:'#3fb950',lbl:'🏛 London (08:00–13:00 UTC)'},
+            NewYork:{bg:'#2d1a1a',br:'#f85149',lbl:'🗽 New York (13:30–20:00 UTC)'}};
+  const BC={'Accumulation':'#3fb950','Distribution':'#f85149','Consolidation':'#d29922'};
+  const BI={'Accumulation':'↑ Accumulation','Distribution':'↓ Distribution','Consolidation':'↔ Consolidation'};
+  const ca=d.cross_analysis||{};
+  let html=`<div style="background:#0d2818;border:1px solid #238636;border-radius:8px;padding:12px;margin-bottom:14px">
+    <div style="font-size:13px;font-weight:500;color:#3fb950;margin-bottom:8px">
+      🔍 ${d.symbol} — <em style="color:#e6edf3">${ca.setup||'Analyzing...'}</em>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px">
+      ${Object.entries(ca.biases||{}).map(([s,b])=>`<span>${s}: <strong style="color:${BC[b]||'#8b949e'}">${BI[b]||b}</strong></span>`).join('')}
+      <span style="color:#8b949e">Source: ${d.source} | ${d.generated}</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">`;
+  for(const[sn,cfg] of Object.entries(SC)){
+    const sd=d[sn];
+    html+=`<div style="background:${cfg.bg};border:1px solid ${cfg.br};border-radius:10px;padding:14px">
+      <div style="font-size:13px;font-weight:500;margin-bottom:8px">${cfg.lbl}</div>`;
+    if(!sd){html+='<div style="color:#8b949e;font-size:12px">No data for this session</div></div>';continue;}
+    html+=`<div style="font-size:12px;margin-bottom:8px">
+      Avg: <strong class="${sd.avg_change>=0?'g':'r'}">${sd.avg_change>=0?'+':''}${sd.avg_change}%</strong>
+      &nbsp;|&nbsp;<strong style="color:${BC[sd.dominant_bias]||'#8b949e'}">${BI[sd.dominant_bias]||sd.dominant_bias}</strong>
+    </div>
+    <table style="font-size:11px"><tr><th>Date</th><th>Open</th><th>Close</th><th>Chg%</th><th>Pattern</th></tr>`;
+    (sd.days||[]).forEach(day=>{
+      html+=`<tr>
+        <td style="color:#8b949e">${day.date}</td>
+        <td>$${day.open}</td><td>$${day.close}</td>
+        <td class="${day.change_pct>=0?'g':'r'}">${day.change_pct>=0?'+':''}${day.change_pct}%</td>
+        <td style="color:${BC[day.bias]||'#8b949e'}">${day.bias}</td>
+      </tr>`;
+    });
+    html+='</table></div>';
+  }
+  html+=`</div><div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;margin-top:14px;font-size:11px;color:#8b949e">
+    <strong style="color:#58a6ff">📚 Reading guide:</strong>&nbsp;
+    <strong style="color:#3fb950">Accumulation</strong> = smart money buying &nbsp;|&nbsp;
+    <strong style="color:#f85149">Distribution</strong> = smart money selling &nbsp;|&nbsp;
+    <strong style="color:#d29922">Consolidation</strong> = range-bound waiting<br>
+    Classic ICT: Asia consolidates → London distributes opposite → NY breaks in Asia's direction
+  </div>`;
+  el.innerHTML=html;
+}
+
+// ── EOD JOURNAL ───────────────────────────────────────────────────────────────
+let equityChart=null;
+async function exportEOD() {
+  const date=$('eod-date').value||new Date().toISOString().slice(0,10);
+  try {
+    const r=await fetch('/api/eod_export',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
+    if(r.ok){
+      const blob=await r.blob();
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=`EOD_Journal_${date}.xlsx`; a.click();
+    } else { alert('Export failed: '+r.statusText); }
+  } catch(e){alert('Error: '+e.message);}
+}
+
+async function loadCalendar() {
+  const el=$('eod-calendar-wrap');
+  if(!el) return;
+  el.innerHTML='<div class="loading"><span class="spin"></span></div>';
+  try {
+    const d=await apiFetch('/api/pnl_calendar');
+    renderCalendar(d); renderEquityCurve(d);
+  } catch(e){el.innerHTML=`<div style="color:#f85149">Error: ${e.message}</div>`;}
+}
+
+function renderCalendar(d) {
+  const el=$('eod-calendar-wrap'); const cal=d.calendar||[];
+  if(!cal.length){
+    el.innerHTML='<div style="color:#8b949e;padding:20px;text-align:center">No closed trades yet. Close some positions to build your journal.</div>';
+    return;
+  }
+  let html=`<div style="margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px">
+    <span>Trading days: <strong>${d.total_days}</strong></span>
+    <span>Cumulative P&L: <strong class="${d.cumulative_pnl>=0?'g':'r'}">${d.cumulative_pnl>=0?'+':''}$${(d.cumulative_pnl||0).toFixed(2)}</strong></span>
+  </div>
+  <table><tr><th>Date</th><th>Trades</th><th>W</th><th>L</th><th>Day P&L</th><th>Cumulative</th></tr>`;
+  [...cal].reverse().forEach(row=>{
+    html+=`<tr>
+      <td style="color:#8b949e">${row.date}</td><td>${row.trades}</td>
+      <td class="g">${row.wins}</td><td class="r">${row.losses}</td>
+      <td class="${row.pnl>=0?'g':'r'}">${row.pnl>=0?'+':''}$${(row.pnl||0).toFixed(2)}</td>
+      <td class="${row.cumulative>=0?'g':'r'}">${row.cumulative>=0?'+':''}$${(row.cumulative||0).toFixed(2)}</td>
+    </tr>`;
+  });
+  el.innerHTML=html+'</table>';
+}
+
+function renderEquityCurve(d) {
+  const cal=d.calendar||[]; if(!cal.length) return;
+  const ctx=$('equity-chart'); if(!ctx) return;
+  const ex=Chart.getChart(ctx); if(ex) ex.destroy(); equityChart=null;
+  equityChart=new Chart(ctx,{type:'line',
+    data:{labels:cal.map(r=>r.date),datasets:[{
+      label:'Equity',data:cal.map(r=>r.cumulative),
+      borderColor:'#58a6ff',backgroundColor:'#58a6ff18',
+      borderWidth:2,pointRadius:3,fill:true,tension:0.3,
+      pointBackgroundColor:cal.map((r,i)=>r.cumulative>=(i>0?cal[i-1].cumulative:0)?'#3fb950':'#f85149'),
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`P&L: $${(c.raw||0).toFixed(2)}`}}},
+      scales:{x:{ticks:{maxTicksLimit:8,maxRotation:0,font:{size:10},color:'#8b949e'},grid:{color:'#21262d'}},
+              y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},grid:{color:'#21262d'}}}}
+  });
+}
+
 </script>
 </body>
 </html>

@@ -191,3 +191,36 @@ After deploying: `curl "https://api.telegram.org/bot{TOKEN}/setWebhook?url=https
 - [ ] AI trade journal (weekly summary)
 - [ ] WhatsApp / Discord alerts
 - [ ] Backtest viewer tab
+
+---
+
+## v6 Changes (Latest)
+
+### FIXED: Chart date ranges were all wrong
+Root cause: all UI periods (1mo, 3mo, 6mo, 1y) mapped to the same "1D" TF key which always returned 252 bars.
+Fix: new `PERIOD_CONFIG` dict in `core/market_data.py` maps each period to exact bar counts:
+- 1mo = 22 bars, 3mo = 66, 6mo = 132, 1y = 252, 3y = 756, 5y = 1260, 10y = 520 (weekly)
+
+### NEW: Auto-refresh selector
+Header dropdown: Off, 1s, 5s, 10s, 15s, 30s, 60s. Live countdown shown next to selector.
+
+### NEW: Market Sessions tab (tab 6)
+ICT session analysis: Asia / London / New York
+- Fetches 1h bars, splits into session windows by UTC time
+- Per session: shows last 5 days with Open/Close/Change% and Accumulation/Distribution/Consolidation label
+- Cross-session pattern detection: identifies classic ICT setups (Asia acc → London dist → NY breakout)
+- Route: POST /api/sessions {symbol}
+
+### NEW: EOD Journal tab (tab 7)
+- P&L calendar table: every trading day with wins/losses/day P&L/cumulative P&L
+- Equity curve chart (Chart.js)
+- Export day journal as Excel: EOD_Journal_YYYY-MM-DD.xlsx (2 sheets: daily summary + calendar)
+- Date picker to export any past day
+- Routes: GET /api/pnl_calendar, POST /api/eod_export {date}
+
+### FIXED: Canvas reuse error
+All chart creation now calls `Chart.getChart(ctx)` first to destroy existing chart.
+
+### NEW: Extended timeframes
+1M, 3M, 6M, 1Y, 3Y, 5Y, 10Y now all return correct, distinct date ranges.
+10Y uses weekly bars. Date labels auto-format (short for recent, "Mon YYYY" for long).

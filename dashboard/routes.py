@@ -181,52 +181,63 @@ def api_chart_data():
     symbol = data.get("symbol","").upper()
     period = data.get("period","3mo")
     try:
-        from core.market_data import get_bars
-        # Map UI period strings to TF codes
-        PERIOD_MAP = {
-            "1mo":"1D","3mo":"1D","6mo":"1D","1y":"1D",
-            "3y":"3Y","5y":"5Y","10y":"10Y","1D":"1D",
-            "3Y":"3Y","5Y":"5Y","10Y":"10Y","1W":"1W"
-        }
-        tf   = PERIOD_MAP.get(period, "1D")
-        bars = get_bars(symbol, tf)
-        if not bars:
-            return jsonify({"error": "No data"}), 404
+        from core.market_data import get_bars, PERIOD_CONFIG
         from datetime import datetime
+        # period is passed directly — e.g. "1mo","3mo","6mo","1y","3y","5y","10y"
+        bars = get_bars(symbol, period)
+        if not bars:
+            return jsonify({"error": "No data available"}), 404
+
+        # Smart date formatting based on period
+        long_periods = ("3y","5y","10y","3Y","5Y","10Y")
+        mid_periods  = ("1y","1W","1D")
         dates = []
         for b in bars:
             try:
                 dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
-                fmt = "%Y" if tf in ("10Y","5Y","3Y") else "%m/%d/%y" if tf in ("1W",) else "%m/%d/%y"
-                dates.append(dt.strftime(fmt))
+                if period in long_periods:
+                    dates.append(dt.strftime("%b %Y"))
+                elif period in mid_periods:
+                    dates.append(dt.strftime("%b %d %y"))
+                else:
+                    dates.append(dt.strftime("%b %d"))
             except:
                 dates.append("")
+
         closes = [b.get("c") for b in bars]
-        # Compute EMAs
+
+        # Compute EMAs server-side
         def ema_series(data, span):
-            k, s, result = 2/(span+1), data[0], []
+            if not data or len(data) < span: return []
+            k = 2/(span+1)
+            s = next((x for x in data if x), data[0])
+            result = []
             for p in data:
                 if p is None: result.append(None); continue
                 s = p*k + s*(1-k)
-                result.append(round(s,2))
+                result.append(round(s, 2))
             return result
-        c_clean = [c for c in closes if c is not None]
-        ema9  = ema_series(c_clean, 9)   if len(c_clean)>=9  else []
-        ema21 = ema_series(c_clean, 21)  if len(c_clean)>=21 else []
-        ema63 = ema_series(c_clean, 63)  if len(c_clean)>=63 else []
-        ema200= ema_series(c_clean, 200) if len(c_clean)>=200 else []
+
+        c_valid = [c for c in closes if c is not None]
+        ema9   = ema_series(c_valid, 9)
+        ema21  = ema_series(c_valid, 21)
+        ema63  = ema_series(c_valid, 63)
+        ema200 = ema_series(c_valid, 200) if len(c_valid) >= 200 else []
+
         return jsonify({
-            "symbol":  symbol, "tf": tf,
-            "dates":   dates,
-            "open":    [b.get("o") for b in bars],
-            "high":    [b.get("h") for b in bars],
-            "low":     [b.get("l") for b in bars],
-            "close":   closes,
-            "volume":  [b.get("v") for b in bars],
-            "ema9":    ema9, "ema21": ema21,
-            "ema63":   ema63, "ema200": ema200,
-            "source":  bars[0].get("source","demo") if bars else "demo",
+            "symbol":    symbol,
+            "period":    period,
+            "dates":     dates,
+            "open":      [b.get("o") for b in bars],
+            "high":      [b.get("h") for b in bars],
+            "low":       [b.get("l") for b in bars],
+            "close":     closes,
+            "volume":    [b.get("v") for b in bars],
+            "ema9":      ema9, "ema21": ema21,
+            "ema63":     ema63, "ema200": ema200,
+            "source":    bars[0].get("source","demo") if bars else "demo",
             "bar_count": len(bars),
+            "date_range": f"{dates[0] if dates else ''} → {dates[-1] if dates else ''}",
         })
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
@@ -244,28 +255,29 @@ def api_compare():
     try:
         from core.market_data import get_bars
         from datetime import datetime
-        PERIOD_MAP = {"1mo":"1D","3mo":"1D","6mo":"1D","1y":"1D",
-                      "3y":"3Y","5y":"5Y","10y":"10Y","1W":"1W"}
-        tf = PERIOD_MAP.get(period, "1D")
+        long_p = ("3y","5y","10y")
         result = {}
         for sym in symbols:
-            bars = get_bars(sym, tf)
+            bars = get_bars(sym, period)
             if not bars: continue
             dates, closes = [], []
             for b in bars:
                 try:
                     dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
-                    fmt = "%Y-%m" if tf in ("5Y","10Y","3Y") else "%m/%d/%y"
+                    fmt = "%b %Y" if period in long_p else "%b %d %y"
                     dates.append(dt.strftime(fmt))
                 except:
                     dates.append("")
                 closes.append(b.get("c"))
             base = next((c for c in closes if c), None)
             if not base: continue
-            norm = [round((c/base-1)*100,2) if c else None for c in closes]
-            result[sym] = {"dates":dates,"norm":norm,"closes":closes,
-                           "source": bars[0].get("source","demo") if bars else "demo",
-                           "tf": tf}
+            norm = [round((c/base-1)*100, 2) if c else None for c in closes]
+            result[sym] = {
+                "dates":  dates, "norm": norm, "closes": closes,
+                "source": bars[0].get("source","demo") if bars else "demo",
+                "period": period, "bar_count": len(bars),
+                "date_range": f"{dates[0] if dates else ''} → {dates[-1] if dates else ''}",
+            }
         return jsonify(result)
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
@@ -376,3 +388,253 @@ def health():
 def api_data_status():
     from core.market_data import data_source_status
     return jsonify(data_source_status())
+
+# ── Market Sessions (Asia/London/New York) ────────────────────────────────────
+@dashboard_bp.route("/api/sessions", methods=["POST"])
+def api_sessions():
+    e = _auth();
+    if e: return e
+    data    = request.json or {}
+    symbol  = data.get("symbol","SPY").upper()
+    try:
+        from core.market_data import get_bars
+        from datetime import datetime, timezone
+        import math
+
+        # Get intraday 1h bars (last 5 days)
+        bars = get_bars(symbol, "1h")
+        if not bars:
+            return jsonify({"error": "No intraday data"}), 404
+
+        # Session times UTC
+        # Asia:    00:00 - 08:00 UTC
+        # London:  08:00 - 13:00 UTC
+        # NY:      13:30 - 20:00 UTC
+        sessions = {"Asia": [], "London": [], "NewYork": []}
+
+        for b in bars[-120:]:  # last 5 days of hourly
+            try:
+                dt   = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
+                hour = dt.hour
+                day  = dt.strftime("%Y-%m-%d")
+                bar_data = {
+                    "time":  dt.strftime("%m/%d %H:%M"),
+                    "day":   day,
+                    "open":  b.get("o"), "high": b.get("h"),
+                    "low":   b.get("l"), "close": b.get("c"),
+                    "vol":   b.get("v",0),
+                }
+                if 0 <= hour < 8:
+                    sessions["Asia"].append(bar_data)
+                elif 8 <= hour < 13:
+                    sessions["London"].append(bar_data)
+                elif 13 <= hour < 21:
+                    sessions["NewYork"].append(bar_data)
+            except:
+                continue
+
+        def session_stats(bars_list):
+            if not bars_list: return None
+            # Group by day
+            days = {}
+            for b in bars_list:
+                d = b["day"]
+                if d not in days: days[d] = []
+                days[d].append(b)
+
+            day_stats = []
+            for day, dbars in list(days.items())[-5:]:
+                opens  = [x["open"]  for x in dbars if x["open"]]
+                closes = [x["close"] for x in dbars if x["close"]]
+                highs  = [x["high"]  for x in dbars if x["high"]]
+                lows   = [x["low"]   for x in dbars if x["low"]]
+                vols   = [x["vol"]   for x in dbars if x["vol"]]
+                if not opens or not closes: continue
+                o = opens[0]; c = closes[-1]
+                h = max(highs) if highs else c
+                l = min(lows)  if lows  else c
+                chg = round((c-o)/o*100,2) if o else 0
+                rng = round(h-l, 2)
+                vol = sum(vols)
+                day_stats.append({
+                    "date": day, "open": round(o,2), "close": round(c,2),
+                    "high": round(h,2), "low": round(l,2),
+                    "change_pct": chg, "range": rng, "volume": vol,
+                    "bias": "Accumulation" if chg > 0.3 else
+                            "Distribution"  if chg < -0.3 else "Consolidation",
+                    "bars": dbars,
+                })
+            if not day_stats: return None
+            avg_chg = sum(d["change_pct"] for d in day_stats)/len(day_stats)
+            return {
+                "days": day_stats,
+                "avg_change": round(avg_chg,2),
+                "dominant_bias": "Accumulation" if avg_chg > 0.2 else
+                                 "Distribution"  if avg_chg < -0.2 else "Consolidation",
+            }
+
+        result = {
+            "symbol":   symbol,
+            "source":   bars[0].get("source","demo") if bars else "demo",
+            "generated":datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "Asia":     session_stats(sessions["Asia"]),
+            "London":   session_stats(sessions["London"]),
+            "NewYork":  session_stats(sessions["NewYork"]),
+        }
+
+        # Cross-session analysis
+        biases = {k: v["dominant_bias"] if v else "N/A"
+                  for k,v in result.items() if k in ("Asia","London","NewYork")}
+        result["cross_analysis"] = {
+            "biases": biases,
+            "setup": _detect_session_setup(biases),
+        }
+        return jsonify(result)
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+def _detect_session_setup(biases):
+    a = biases.get("Asia","")
+    l = biases.get("London","")
+    n = biases.get("NewYork","")
+    if a == "Accumulation" and l == "Distribution" and n == "Accumulation":
+        return "Classic Reversal — Asia acc, London dist, NY breakout ↑"
+    if a == "Distribution" and l == "Accumulation" and n == "Distribution":
+        return "Classic Reversal — Asia dist, London acc, NY breakout ↓"
+    if a in ("Consolidation","Accumulation") and l == "Accumulation" and n == "Accumulation":
+        return "Trend Day ↑ — consistent accumulation across sessions"
+    if a in ("Consolidation","Distribution") and l == "Distribution" and n == "Distribution":
+        return "Trend Day ↓ — consistent distribution across sessions"
+    if a == "Consolidation" and l == "Consolidation":
+        return "Range Day — waiting for NY session to break direction"
+    if a == "Distribution" and l == "Accumulation":
+        return "London Reversal — Asia sold, London bought back"
+    if a == "Accumulation" and l == "Distribution":
+        return "London Fade — Asia built up, London distributed"
+    return "Mixed signals — monitor NY open for direction"
+
+
+# ── EOD P&L Export + Calendar ─────────────────────────────────────────────────
+@dashboard_bp.route("/api/eod_export", methods=["POST"])
+def api_eod_export():
+    e = _auth();
+    if e: return e
+    try:
+        import io, json
+        from datetime import datetime, date
+        from core.database import get_closed_positions, get_closed_summary, get_recent_trades
+        from core.excel_export import export_trades_excel
+
+        today      = date.today().isoformat()
+        req_date   = (request.json or {}).get("date", today)
+
+        # Get today's closed positions
+        all_closed = get_closed_positions(500)
+        day_closed = [p for p in all_closed if (p.get("closed_at","") or "").startswith(req_date)]
+        all_trades = get_recent_trades(200)
+        day_trades = [t for t in all_trades if (t.get("timestamp","") or "").startswith(req_date)]
+
+        # Daily P&L
+        day_pnl   = sum(p.get("pnl",0) or 0 for p in day_closed)
+        day_wins  = sum(1 for p in day_closed if (p.get("pnl") or 0) > 0)
+        day_loss  = sum(1 for p in day_closed if (p.get("pnl") or 0) < 0)
+
+        # Build EOD Excel
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        wb  = openpyxl.Workbook()
+
+        # Sheet 1: Daily Summary
+        ws1 = wb.active
+        ws1.title = f"EOD {req_date}"
+        hdr_fill = PatternFill("solid", fgColor="1F2937")
+        hdr_font = Font(color="FFFFFF", bold=True)
+
+        ws1.append(["EOD TRADING JOURNAL", req_date])
+        ws1.append([])
+        ws1.append(["DAILY SUMMARY"])
+        ws1.append(["Date", req_date])
+        ws1.append(["Day P&L", f"${day_pnl:.2f}"])
+        ws1.append(["Trades Closed", len(day_closed)])
+        ws1.append(["Winners", day_wins])
+        ws1.append(["Losers",  day_loss])
+        ws1.append(["Win Rate", f"{(day_wins/len(day_closed)*100):.1f}%" if day_closed else "0%"])
+        ws1.append([])
+        ws1.append(["CLOSED POSITIONS"])
+        ws1.append(["Symbol","Side","Qty","Entry","Exit","P&L","P&L %","Time"])
+        for p in day_closed:
+            ws1.append([
+                p.get("symbol",""), p.get("side",""),
+                p.get("qty",0), p.get("entry_price",0), p.get("exit_price",0),
+                p.get("pnl",0), p.get("pnl_pct",0), p.get("closed_at",""),
+            ])
+        ws1.append([])
+        ws1.append(["ALL SIGNALS TODAY"])
+        ws1.append(["Time","Symbol","Action","Qty","Status"])
+        for t in day_trades:
+            ws1.append([t.get("timestamp",""), t.get("symbol",""),
+                        t.get("action",""), t.get("quantity",0), t.get("status","")])
+
+        # Sheet 2: Calendar summary (all days)
+        ws2 = wb.create_sheet("P&L Calendar")
+        ws2.append(["Date","Trades","Winners","Losers","Day P&L","Cumulative P&L"])
+        all_p  = get_closed_positions(1000)
+        # Group by date
+        by_day = {}
+        for p in all_p:
+            d = (p.get("closed_at","") or "")[:10]
+            if d not in by_day: by_day[d] = []
+            by_day[d].append(p)
+        cum = 0
+        for d in sorted(by_day.keys()):
+            ps   = by_day[d]
+            dpnl = sum(p.get("pnl",0) or 0 for p in ps)
+            wins = sum(1 for p in ps if (p.get("pnl") or 0)>0)
+            loss = sum(1 for p in ps if (p.get("pnl") or 0)<0)
+            cum += dpnl
+            ws2.append([d, len(ps), wins, loss, round(dpnl,2), round(cum,2)])
+
+        # Autosize
+        for ws in [ws1, ws2]:
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or "")) for cell in col), default=8)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len+4, 30)
+
+        out = io.BytesIO()
+        wb.save(out)
+        out.seek(0)
+
+        from flask import send_file
+        return send_file(out,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"EOD_Journal_{req_date}.xlsx")
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+
+@dashboard_bp.route("/api/pnl_calendar")
+def api_pnl_calendar():
+    e = _auth();
+    if e: return e
+    try:
+        from core.database import get_closed_positions
+        all_p  = get_closed_positions(1000)
+        by_day = {}
+        for p in all_p:
+            d = (p.get("closed_at","") or "")[:10]
+            if not d: continue
+            if d not in by_day:
+                by_day[d] = {"date":d,"pnl":0,"trades":0,"wins":0,"losses":0}
+            by_day[d]["trades"] += 1
+            pnl = p.get("pnl") or 0
+            by_day[d]["pnl"]    = round(by_day[d]["pnl"] + pnl, 2)
+            if pnl > 0: by_day[d]["wins"]   += 1
+            else:       by_day[d]["losses"]  += 1
+        cal = sorted(by_day.values(), key=lambda x: x["date"])
+        cum = 0
+        for d in cal:
+            cum += d["pnl"]; d["cumulative"] = round(cum,2)
+        return jsonify({"calendar": cal, "total_days": len(cal), "cumulative_pnl": round(cum,2)})
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
