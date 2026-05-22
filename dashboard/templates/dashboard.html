@@ -644,26 +644,13 @@ async function loadWebhooks() {
   try {
     const wh = await apiFetch('/api/webhooks');
     if(!wh.length) { el.innerHTML = empty('No signals yet — waiting for TradingView'); return; }
-   // let html = '<table><tr><th>Time</th><th>Status</th><th>Symbol</th><th>Action</th><th>Error</th></tr>';
-    let html = `<table>
-<tr>
-  <th>UTC</th>
-  <th>JST</th>
-  <th>EST</th>
-  <th>Status</th>
-  <th>Symbol</th>
-  <th>Action</th>
-  <th>Error</th></tr>`;
+    let html = '<table><tr><th>Time</th><th>Status</th><th>Symbol</th><th>Action</th><th>Error</th></tr>';
     wh.forEach(w => {
       let sym='—',act='—';
       try{ const p=JSON.parse(w.raw_payload.replace(/'/g,'"')); sym=p.symbol||'—'; act=p.action||'—'; }catch(e){}
       const ac = act==='buy'?'g':act==='sell'?'r':'y';
       html += `<tr>
-      // SP -  <td style="color:#8b949e;font-size:11px">${(w.timestamp||'').slice(0,16)}</td>
-      <td style="color:#8b949e;font-size:11px">${w.utc_time || '-'}</td>
-      <td style="color:#58a6ff;font-size:11px">${w.jst_time || '-'}</td>
-      <td style="color:#3fb950;font-size:11px">${w.est_time || '-'}</td>
-      
+        <td style="color:#8b949e;font-size:11px">${(w.timestamp||'').slice(0,16)}</td>
         <td><span class="tag ${w.status==='success'?'tg':w.status==='error'||w.status==='rejected'?'tr':'tb'}">${w.status}</span></td>
         <td><strong>${sym}</strong></td>
         <td class="${ac}">${act.toUpperCase()}</td>
