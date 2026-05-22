@@ -105,12 +105,6 @@ def log_webhook(raw_payload, status, error=None):
     )
     conn.commit()
     _close(conn)
-
-// def get_recent_webhooks(limit=20):
-//    conn = get_conn()
-//    rows = conn.execute("SELECT * FROM webhook_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-//    _close(conn)
-//    return [dict(r) for r in rows]
     
 def get_recent_webhooks(limit=20):
     conn = get_conn()
