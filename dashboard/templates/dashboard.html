@@ -659,7 +659,11 @@ async function loadWebhooks() {
       try{ const p=JSON.parse(w.raw_payload.replace(/'/g,'"')); sym=p.symbol||'—'; act=p.action||'—'; }catch(e){}
       const ac = act==='buy'?'g':act==='sell'?'r':'y';
       html += `<tr>
-        <td style="color:#8b949e;font-size:11px">${(w.timestamp||'').slice(0,16)}</td>
+      // SP -  <td style="color:#8b949e;font-size:11px">${(w.timestamp||'').slice(0,16)}</td>
+      <td style="color:#8b949e;font-size:11px">${w.utc_time || '-'}</td>
+      <td style="color:#58a6ff;font-size:11px">${w.jst_time || '-'}</td>
+      <td style="color:#3fb950;font-size:11px">${w.est_time || '-'}</td>
+      
         <td><span class="tag ${w.status==='success'?'tg':w.status==='error'||w.status==='rejected'?'tr':'tb'}">${w.status}</span></td>
         <td><strong>${sym}</strong></td>
         <td class="${ac}">${act.toUpperCase()}</td>
