@@ -6,7 +6,6 @@ from datetime import datetime
 import pytz
 
 DB_PATH = os.environ.get("DB_PATH", "trades.db")
-// _local  = threading.local()
 
 UTC = pytz.utc
 JST = pytz.timezone("Asia/Tokyo")
