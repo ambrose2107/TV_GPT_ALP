@@ -2,14 +2,9 @@
 core/database.py — SQLite: trades, webhook_log, closed_positions
 """
 import sqlite3, os, threading
-from datetime import datetime
-import pytz
 
 DB_PATH = os.environ.get("DB_PATH", "trades.db")
-
-UTC = pytz.utc
-JST = pytz.timezone("Asia/Tokyo")
-EST = pytz.timezone("US/Eastern")
+_local  = threading.local()
 
 def get_conn():
     global DB_PATH
@@ -105,58 +100,12 @@ def log_webhook(raw_payload, status, error=None):
     )
     conn.commit()
     _close(conn)
-    
+
 def get_recent_webhooks(limit=20):
     conn = get_conn()
-
-    rows = conn.execute(
-        "SELECT * FROM webhook_log ORDER BY id DESC LIMIT ?",
-        (limit,)
-    ).fetchall()
-
+    rows = conn.execute("SELECT * FROM webhook_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     _close(conn)
-
-    webhooks = []
-
-    for r in rows:
-        row = dict(r)
-
-        try:
-            ts = row.get("timestamp")
-
-            if ts:
-                # SQLite datetime -> UTC
-                dt = datetime.strptime(
-                    ts,
-                    "%Y-%m-%d %H:%M:%S"
-                )
-
-                dt = UTC.localize(dt)
-
-                row["utc_time"] = dt.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-
-                row["jst_time"] = (
-                    dt.astimezone(JST)
-                    .strftime("%Y-%m-%d %H:%M:%S")
-                )
-
-                row["est_time"] = (
-                    dt.astimezone(EST)
-                    .strftime("%Y-%m-%d %H:%M:%S")
-                )
-
-        except Exception:
-            row["utc_time"] = "-"
-            row["jst_time"] = "-"
-            row["est_time"] = "-"
-
-        webhooks.append(row)
-
-    return webhooks
-
-
+    return [dict(r) for r in rows]
 
 # ── Closed Positions ──────────────────────────────────────────────────────────
 def log_closed_position(symbol, qty, entry_price, exit_price, side="long",
