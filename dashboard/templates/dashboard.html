@@ -644,7 +644,16 @@ async function loadWebhooks() {
   try {
     const wh = await apiFetch('/api/webhooks');
     if(!wh.length) { el.innerHTML = empty('No signals yet — waiting for TradingView'); return; }
-    let html = '<table><tr><th>Time</th><th>Status</th><th>Symbol</th><th>Action</th><th>Error</th></tr>';
+   // let html = '<table><tr><th>Time</th><th>Status</th><th>Symbol</th><th>Action</th><th>Error</th></tr>';
+    let html = `<table>
+<tr>
+  <th>UTC</th>
+  <th>JST</th>
+  <th>EST</th>
+  <th>Status</th>
+  <th>Symbol</th>
+  <th>Action</th>
+  <th>Error</th></tr>`;
     wh.forEach(w => {
       let sym='—',act='—';
       try{ const p=JSON.parse(w.raw_payload.replace(/'/g,'"')); sym=p.symbol||'—'; act=p.action||'—'; }catch(e){}
