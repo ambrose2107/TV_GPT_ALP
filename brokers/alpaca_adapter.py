@@ -54,55 +54,56 @@ class AlpacaAdapter:
 
     def validate_symbol(self, symbol: str) -> dict:
         """
-        Check if a symbol is valid and tradeable on Alpaca.
+        Validate symbol against Alpaca assets API.
+        IMPORTANT: Always fails OPEN on network/API errors — never block a trade
+        just because validation could not reach the API.
         Returns: { "valid": bool, "message": str, "suggestion": str|None }
         """
         symbol = symbol.upper().strip()
 
-        # Check common wrong names first
+        # Only block clearly wrong exchange/index names
         if symbol in SYMBOL_SUGGESTIONS:
             suggestion = SYMBOL_SUGGESTIONS[symbol]
             if suggestion is None:
                 return {
                     "valid": False,
-                    "message": f"'{symbol}' is an Indian market instrument and is NOT available on Alpaca. Alpaca only supports US stocks/ETFs.",
+                    "message": f"'{symbol}' is an Indian market symbol — not on Alpaca.",
                     "suggestion": None
                 }
             return {
                 "valid": False,
-                "message": f"'{symbol}' is not a stock ticker — it's an index/exchange name. Did you mean '{suggestion}'?",
+                "message": f"'{symbol}' is an index/exchange name. Did you mean '{suggestion}'?",
                 "suggestion": suggestion
             }
 
-        # Check with Alpaca assets endpoint
+        # Try Alpaca assets API — fail OPEN on any error
         try:
             asset = self._request("GET", f"/v2/assets/{symbol}")
-            if not asset.get("tradable", False):
+            if asset.get("status") == "active" and asset.get("tradable"):
+                return {"valid": True, "message": "OK", "suggestion": None}
+            if not asset.get("tradable", True):
                 return {
                     "valid": False,
-                    "message": f"'{symbol}' exists on Alpaca but is NOT currently tradeable.",
+                    "message": f"'{symbol}' is not tradeable on Alpaca.",
                     "suggestion": None
                 }
-            if asset.get("status") != "active":
-                return {
-                    "valid": False,
-                    "message": f"'{symbol}' is not active on Alpaca (status: {asset.get('status')}).",
-                    "suggestion": None
-                }
+            # Active but maybe not tradeable — let Alpaca decide, don't block
             return {"valid": True, "message": "OK", "suggestion": None}
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                return {
-                    "valid": False,
-                    "message": f"'{symbol}' was not found on Alpaca. Check the ticker is a valid US stock/ETF symbol.",
-                    "suggestion": None
-                }
-            # If Alpaca API itself is down, allow through with a warning
-            logger.warning(f"Could not validate symbol {symbol} — Alpaca assets API error: {e}")
-            return {"valid": True, "message": "Validation skipped (API unavailable)", "suggestion": None}
+            if hasattr(e, 'response') and e.response is not None:
+                if e.response.status_code == 404:
+                    return {
+                        "valid": False,
+                        "message": f"'{symbol}' not found on Alpaca. Verify the ticker symbol.",
+                        "suggestion": None
+                    }
+            # Any other HTTP error (403, 429, 5xx) → fail open, let Alpaca handle it
+            logger.warning(f"Symbol validation skipped for {symbol} (HTTP {getattr(e.response,'status_code','?')})")
+            return {"valid": True, "message": "Validation skipped — will attempt order", "suggestion": None}
         except Exception as e:
+            # Network timeout, etc — always fail open
             logger.warning(f"Symbol validation skipped for {symbol}: {e}")
-            return {"valid": True, "message": "Validation skipped", "suggestion": None}
+            return {"valid": True, "message": "Validation skipped — will attempt order", "suggestion": None}
 
     def get_account(self):
         return self._request("GET", "/v2/account")

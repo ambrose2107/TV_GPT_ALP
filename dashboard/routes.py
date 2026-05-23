@@ -43,18 +43,43 @@ def logout():
 
 @dashboard_bp.route("/api/account")
 def api_account():
-    e = _auth(); 
+    e = _auth()
     if e: return e
     try:
-        return jsonify({"account": alpaca.get_account(), "positions": alpaca.get_positions()})
+        account   = alpaca.get_account()
+        positions = alpaca.get_positions()
+
+        # Calculate open positions totals
+        total_market_value = 0.0
+        total_unrealized_pl = 0.0
+        for p in positions:
+            try:
+                total_market_value  += float(p.get("market_value") or 0)
+                total_unrealized_pl += float(p.get("unrealized_pl") or 0)
+            except:
+                pass
+
+        return jsonify({
+            "account":            account,
+            "positions":          positions,
+            "total_market_value": round(total_market_value, 2),
+            "total_unrealized_pl":round(total_unrealized_pl, 2),
+            "open_count":         len(positions),
+        })
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
 
 @dashboard_bp.route("/api/trades")
 def api_trades():
-    e = _auth(); 
+    e = _auth()
     if e: return e
-    return jsonify(get_recent_trades(50))
+    # Sync from Alpaca first so we always show latest
+    try:
+        from core.order_sync import sync_alpaca_orders
+        sync_alpaca_orders(days=7)
+    except Exception as ex:
+        logger.warning(f"Order sync skipped: {ex}")
+    return jsonify(get_recent_trades(200))
 
 @dashboard_bp.route("/api/webhooks")
 def api_webhooks():
@@ -64,9 +89,18 @@ def api_webhooks():
 
 @dashboard_bp.route("/api/closed_positions")
 def api_closed_positions():
-    e = _auth(); 
+    e = _auth()
     if e: return e
-    return jsonify({"positions": get_closed_positions(100), "summary": get_closed_summary()})
+    # Sync latest orders to capture any new closed trades
+    try:
+        from core.order_sync import sync_alpaca_orders
+        sync_alpaca_orders(days=30)
+    except Exception as ex:
+        logger.warning(f"Order sync skipped: {ex}")
+    return jsonify({
+        "positions": get_closed_positions(200),
+        "summary":   get_closed_summary(),
+    })
 
 @dashboard_bp.route("/api/close_position", methods=["POST"])
 def api_close_position():
@@ -379,6 +413,22 @@ def telegram_webhook():
     except Exception as ex:
         logger.error(f"Telegram webhook: {ex}")
         return jsonify({"ok":True})
+
+@dashboard_bp.route("/api/clock")
+def api_clock():
+    """Return current time in UTC, NY, JST + market session schedule."""
+    try:
+        from core.timezone_utils import now_all_zones, market_sessions_utc
+        t    = now_all_zones()
+        sess = market_sessions_utc()
+        return jsonify({
+            "times":    t,
+            "sessions": sess["sessions"],   # flat dict of session ranges
+            "tz_label": sess["tz_label"],
+            "ny_offset":sess["ny_offset"],
+        })
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
 
 @dashboard_bp.route("/health")
 def health():

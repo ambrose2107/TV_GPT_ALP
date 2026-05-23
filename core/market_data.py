@@ -51,21 +51,35 @@ def _yahoo_reachable():
 def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
                     limit: int = 200, feed: str = "iex") -> list | None:
     """
-    Get OHLCV bars from Alpaca.
-    timeframe: 1Min, 5Min, 15Min, 1Hour, 1Day, 1Week
+    Get OHLCV bars from Alpaca Data API.
+    Tries iex feed first (free), then no-feed (default SIP if subscribed).
     Returns list of dicts: {t, o, h, l, c, v}
     """
-    try:
-        url = f"{ALPACA_DATA_URL}/v2/stocks/{symbol.upper()}/bars"
-        params = {"timeframe": timeframe, "limit": limit, "feed": feed,
-                  "sort": "asc", "adjustment": "raw"}
-        r = requests.get(url, params=params, headers=_alpaca_headers(), timeout=12)
-        r.raise_for_status()
-        bars = r.json().get("bars", [])
-        return bars
-    except Exception as e:
-        logger.warning(f"Alpaca bars {symbol} {timeframe}: {e}")
-        return None
+    url = f"{ALPACA_DATA_URL}/v2/stocks/{symbol.upper()}/bars"
+    base_params = {"timeframe": timeframe, "limit": limit,
+                   "sort": "asc", "adjustment": "raw"}
+
+    # Try feeds in order: iex (free delayed), then default
+    for attempt_feed in ["iex", None]:
+        try:
+            params = dict(base_params)
+            if attempt_feed:
+                params["feed"] = attempt_feed
+            r = requests.get(url, params=params, headers=_alpaca_headers(), timeout=12)
+            if r.status_code == 403:
+                continue  # try next feed
+            r.raise_for_status()
+            bars = r.json().get("bars", [])
+            if bars:
+                return bars
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                continue
+            logger.warning(f"Alpaca bars {symbol} {timeframe} feed={attempt_feed}: {e}")
+        except Exception as e:
+            logger.warning(f"Alpaca bars {symbol} {timeframe}: {e}")
+            break
+    return None
 
 
 def alpaca_get_multi_bars(symbols: list, timeframe: str = "1Day",

@@ -224,3 +224,60 @@ All chart creation now calls `Chart.getChart(ctx)` first to destroy existing cha
 ### NEW: Extended timeframes
 1M, 3M, 6M, 1Y, 3Y, 5Y, 10Y now all return correct, distinct date ranges.
 10Y uses weekly bars. Date labels auto-format (short for recent, "Mon YYYY" for long).
+
+---
+## v7 Changes (Latest)
+
+### FIXED: LITE buy showing 400 error
+Root cause: validate_symbol() was timing out or getting 403 on Alpaca assets API,
+which caused it to return valid=False and block the trade.
+Fix: validate_symbol now **fails open** — any network/API error → valid=True and let
+Alpaca's order API decide. Only clearly wrong names (exchange names, Indian stocks) are
+blocked. Note: the LITE buy DID execute on Alpaca (images confirm it), our bot just
+returned 400 to TradingView incorrectly.
+
+### FIXED: History tab empty (P&L + Closed Positions)
+Root cause: Closed positions only logged when user manually clicks Close on dashboard.
+Webhook-placed trades from TradingView never appeared.
+Fix: New `core/order_sync.py` module — every time History tab loads, it pulls the last
+7 days of filled orders from Alpaca and syncs any missing ones into our local DB.
+Also auto-matches buy+sell pairs for P&L calculation.
+Routes: sync runs on /api/trades and /api/closed_positions load.
+
+### FIXED: Analyzer Pro N/A for some timeframes
+Root cause: Intermittent — Alpaca iex feed sometimes returns empty for certain timeframes.
+Fix: alpaca_get_bars now tries `iex` feed first, then retries without feed param. Both
+Yahoo Finance and demo data are fallbacks. Should be consistently populated now.
+
+### NEW: Live JST/NY/UTC clock in header
+- Ticks every second in browser (no server call needed)
+- Shows JST, EDT/EST, UTC simultaneously
+- Market status badge: 🟢 Market Open / 🔵 Pre-Market / 🟡 After-Hours / Closed
+- isDST() auto-detects US summer time (EDT vs EST)
+
+### NEW: Session Times table in Settings tab
+Full session schedule with times in all 3 zones:
+- Asia Session: UTC 00:00-08:00 = JST 09:00-17:00 = NY 20:00-04:00
+- London Session: UTC 08:00-17:00 = JST 17:00-02:00 = NY 04:00-13:00  
+- NY Regular Hours: UTC 13:30-20:00 = JST 22:30-05:00 = NY 09:30-16:00
+- Overlap London+NY: UTC 13:30-17:00 = JST 22:30-02:00 = NY 09:30-13:00
+
+### NEW: Open Positions total row
+Positions tab now shows totals: Total Market Value + Total Unrealized P&L.
+Dashboard cards show: Open Market Value + Unrealized P&L.
+
+### FIXED: Closed Positions highlighting
+Each closed trade now shows entry price, exit price, P&L $, P&L %,
+with ✅ Profit (green bg) / ❌ Loss (red bg) highlighting.
+
+### NEW: pytz for proper timezone handling
+`pip install pytz` now in requirements.txt.
+Proper DST handling via pytz.timezone("Asia/Tokyo") and pytz.timezone("US/Eastern").
+
+### Files changed in v7
+- core/order_sync.py (NEW)
+- core/timezone_utils.py (rewritten with pytz)
+- brokers/alpaca_adapter.py (validate_symbol fails open)
+- dashboard/routes.py (account totals, order sync, clock route)
+- dashboard/templates/dashboard.html (clock, positions totals, closed PL highlight)
+- requirements.txt (added pytz)
