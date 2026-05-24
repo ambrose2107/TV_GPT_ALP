@@ -1,162 +1,154 @@
 """
-core/database.py — SQLite: trades, webhook_log, closed_positions
+core/database.py — v8
+SQLite database layer.
+Tables: trades, webhook_log, closed_positions
+
+v8 changes:
+- get_webhook_log now returns both utc + dual_tz fields
+- get_closed_positions() helper exposed for analytics/mirrorfish
+- init_db creates closed_positions if missing
 """
-import sqlite3, os, threading
 
+import sqlite3
+import os
+from core.logger import get_logger
+from core.timezone_utils import parse_and_dual_format
+
+logger = get_logger(__name__)
 DB_PATH = os.environ.get("DB_PATH", "trades.db")
-_local  = threading.local()
 
-def get_conn():
-    global DB_PATH
-    DB_PATH = os.environ.get("DB_PATH", "trades.db")
-    if DB_PATH == ":memory:":
-        if not hasattr(_local, "conn") or _local.conn is None:
-            _local.conn = sqlite3.connect(":memory:", check_same_thread=False)
-            _local.conn.row_factory = sqlite3.Row
-        return _local.conn
+
+def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-def _close(conn):
-    if DB_PATH != ":memory:":
-        conn.close()
-
-def reset_memory_db():
-    if hasattr(_local, "conn") and _local.conn:
-        _local.conn.close()
-    _local.conn = None
 
 def init_db():
-    conn = get_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp   TEXT    DEFAULT (datetime('now')),
-            symbol      TEXT    NOT NULL,
-            action      TEXT    NOT NULL,
-            quantity    REAL    NOT NULL,
-            order_type  TEXT    NOT NULL,
-            status      TEXT    NOT NULL,
-            alpaca_id   TEXT,
-            message     TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS webhook_log (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp   TEXT    DEFAULT (datetime('now')),
-            raw_payload TEXT,
-            status      TEXT,
-            error       TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS closed_positions (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            closed_at    TEXT    DEFAULT (datetime('now')),
-            symbol       TEXT    NOT NULL,
-            qty          REAL    NOT NULL,
-            entry_price  REAL,
-            exit_price   REAL,
-            pnl          REAL,
-            pnl_pct      REAL,
-            side         TEXT,
-            hold_time    TEXT,
-            alpaca_id    TEXT
-        )
-    """)
-    conn.commit()
-    _close(conn)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-# ── Trades ────────────────────────────────────────────────────────────────────
-def log_trade(symbol, action, quantity, order_type, status, alpaca_id=None, message=None):
-    conn = get_conn()
+    cur.execute("""CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        action TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        price REAL,
+        order_id TEXT,
+        status TEXT DEFAULT 'filled',
+        error_msg TEXT,
+        timestamp TEXT NOT NULL
+    )""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS webhook_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT,
+        action TEXT,
+        raw_payload TEXT,
+        result TEXT,
+        timestamp TEXT NOT NULL
+    )""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS closed_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        side TEXT DEFAULT 'LONG',
+        qty REAL DEFAULT 0,
+        entry_price REAL DEFAULT 0,
+        exit_price REAL DEFAULT 0,
+        pnl_dollar REAL DEFAULT 0,
+        pnl_percent REAL DEFAULT 0,
+        closed_at TEXT NOT NULL
+    )""")
+
+    conn.commit()
+    conn.close()
+    logger.info("Database initialized.")
+
+
+def log_trade(symbol, action, quantity, price=None, order_id=None,
+              status="filled", error_msg=None):
+    from core.timezone_utils import format_timestamp_for_db
+    conn = get_db_connection()
     conn.execute(
-        "INSERT INTO trades (symbol,action,quantity,order_type,status,alpaca_id,message) VALUES (?,?,?,?,?,?,?)",
-        (symbol, action, quantity, order_type, status, alpaca_id, message)
+        """INSERT INTO trades (symbol, action, quantity, price, order_id, status, error_msg, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (symbol, action, quantity, price, order_id, status, error_msg,
+         format_timestamp_for_db())
     )
     conn.commit()
-    _close(conn)
+    conn.close()
 
-def get_recent_trades(limit=50):
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    _close(conn)
-    return [dict(r) for r in rows]
 
-def get_all_trades():
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM trades ORDER BY id DESC").fetchall()
-    _close(conn)
-    return [dict(r) for r in rows]
-
-# ── Webhooks ──────────────────────────────────────────────────────────────────
-def log_webhook(raw_payload, status, error=None):
-    conn = get_conn()
+def log_webhook(symbol, action, raw_payload, result):
+    from core.timezone_utils import format_timestamp_for_db
+    conn = get_db_connection()
     conn.execute(
-        "INSERT INTO webhook_log (raw_payload,status,error) VALUES (?,?,?)",
-        (str(raw_payload), status, error)
+        """INSERT INTO webhook_log (symbol, action, raw_payload, result, timestamp)
+           VALUES (?, ?, ?, ?, ?)""",
+        (symbol, action, str(raw_payload)[:500], result, format_timestamp_for_db())
     )
     conn.commit()
-    _close(conn)
+    conn.close()
 
-def get_recent_webhooks(limit=20):
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM webhook_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    _close(conn)
-    return [dict(r) for r in rows]
 
-# ── Closed Positions ──────────────────────────────────────────────────────────
-def log_closed_position(symbol, qty, entry_price, exit_price, side="long",
-                        hold_time=None, alpaca_id=None):
-    if entry_price and exit_price:
-        if side == "long":
-            pnl     = (exit_price - entry_price) * qty
-            pnl_pct = ((exit_price - entry_price) / entry_price) * 100
-        else:
-            pnl     = (entry_price - exit_price) * qty
-            pnl_pct = ((entry_price - exit_price) / entry_price) * 100
-    else:
-        pnl = pnl_pct = None
+def get_trades(limit=50):
+    conn = get_db_connection()
+    conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    # Add dual-timezone display
+    for row in rows:
+        row["timestamp_display"] = parse_and_dual_format(row.get("timestamp", ""))
+    return rows
 
-    conn = get_conn()
-    conn.execute(
-        """INSERT INTO closed_positions
-           (symbol,qty,entry_price,exit_price,pnl,pnl_pct,side,hold_time,alpaca_id)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
-        (symbol, qty, entry_price, exit_price, pnl, pnl_pct, side, hold_time, alpaca_id)
-    )
-    conn.commit()
-    _close(conn)
+
+def get_webhook_log(limit=20):
+    conn = get_db_connection()
+    conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM webhook_log ORDER BY timestamp DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    # Add dual-timezone display field for each log entry
+    for row in rows:
+        ts_raw = row.get("timestamp", "")
+        row["timestamp_display"] = parse_and_dual_format(ts_raw)
+        # Keep original UTC for JS
+        row["timestamp_utc"] = ts_raw
+    return rows
+
 
 def get_closed_positions(limit=100):
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM closed_positions ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
-    _close(conn)
-    return [dict(r) for r in rows]
+    conn = get_db_connection()
+    conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT * FROM closed_positions ORDER BY closed_at DESC LIMIT ?",
+            (limit,)
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    conn.close()
+    for row in rows:
+        row["closed_at_display"] = parse_and_dual_format(row.get("closed_at", ""))
+    return rows
 
-def get_all_closed_positions():
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM closed_positions ORDER BY id DESC").fetchall()
-    _close(conn)
-    return [dict(r) for r in rows]
 
-def get_closed_summary():
-    conn = get_conn()
-    row = conn.execute("""
-        SELECT
-            COUNT(*)          as total_trades,
-            SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
-            SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
-            SUM(pnl)          as total_pnl,
-            AVG(pnl)          as avg_pnl,
-            MAX(pnl)          as best_trade,
-            MIN(pnl)          as worst_trade
-        FROM closed_positions
-        WHERE pnl IS NOT NULL
-    """).fetchone()
-    _close(conn)
-    return dict(row) if row else {}
+def save_closed_position(symbol, side, qty, entry_price, exit_price,
+                          pnl_dollar, pnl_percent):
+    from core.timezone_utils import format_timestamp_for_db
+    conn = get_db_connection()
+    conn.execute(
+        """INSERT INTO closed_positions
+           (symbol, side, qty, entry_price, exit_price, pnl_dollar, pnl_percent, closed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (symbol, side, qty, entry_price, exit_price, pnl_dollar, pnl_percent,
+         format_timestamp_for_db())
+    )
+    conn.commit()
+    conn.close()
