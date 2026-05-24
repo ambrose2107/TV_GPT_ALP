@@ -1,3 +1,7 @@
+"""
+app.py — Flask application factory  v8
+Registers: webhook, dashboard, mirrorfish, analytics blueprints
+"""
 from flask import Flask
 from core.database import init_db
 from core.logger import get_logger
@@ -20,5 +24,5 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(mirrorfish_bp)
     app.register_blueprint(analytics_bp)
-    logger.info("App created — v8 with MirrorFish + Analytics.")
+    logger.info("OptiTrade AI v8 app created.")
     return app

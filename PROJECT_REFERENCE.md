@@ -9,12 +9,12 @@
 Full-stack automated trading bot:
 - Receives BUY/SELL signals from TradingView (OptiTrade AI) via webhooks
 - Places orders automatically on Alpaca paper/live account
-- 9-tab web dashboard to monitor, control, research, analyze, and ask AI
+- **9-tab** web dashboard: Dashboard, Positions, History, Analyzer Pro, Research, Sessions, EOD Journal, Analytics, MirrorFish AI, Settings
 - Telegram alerts on every trade + bot commands (/positions /pnl /close AAPL etc)
 - Analyzer Pro: real-time RSI/MACD/ADX/BB/EMA50/VWAP scanner (pure Python, yfinance)
 - Research engine: 13F institutional, earnings whiplash, sector rotation, insider+options
-- Analytics tab: per-symbol win rates, P&L charts, equity curve, profit factor
-- MirrorFish AI: free LLM market predictions via Groq/OpenRouter/HuggingFace
+- **Analytics tab (NEW v8)**: per-symbol win rates, P&L charts, equity curve, profit factor
+- **MirrorFish AI (NEW v8)**: free LLM market predictions via Groq/OpenRouter/HuggingFace
 - Excel export of all trades and P&L
 
 ---
@@ -41,14 +41,14 @@ https://github.com/ambrose2107/TV_GPT_ALP
 | Notifications | Telegram Bot API                                                |
 | Export        | openpyxl (Excel)                                                |
 | Charts        | Chart.js (CDN, no install)                                      |
-| AI Layer      | Groq / OpenRouter / HuggingFace (all free tiers)               |
+| AI Layer      | Groq / OpenRouter / HuggingFace (all free tiers, uses `requests`) |
 
 ---
 
 ## Environment Variables (Railway → Variables)
 
 ```
-ALPACA_API_KEY        Alpaca API key (from alpaca.markets → paper trading → API keys)
+ALPACA_API_KEY        Alpaca API key
 ALPACA_SECRET_KEY     Alpaca secret key
 ALPACA_MODE           paper (or live when ready)
 APP_SECRET_KEY        Any random string (Flask session encryption)
@@ -62,7 +62,7 @@ MAX_OPEN_POSITIONS    5
 KILL_SWITCH           false
 
 # v8 NEW — MirrorFish AI (add at least one; all are free tier)
-GROQ_API_KEY          Get free at console.groq.com  ← RECOMMENDED (fastest)
+GROQ_API_KEY          Get free at console.groq.com  ← RECOMMENDED (fastest, LLaMA 70B)
 OPENROUTER_API_KEY    Get free at openrouter.ai     ← good fallback
 HUGGINGFACE_API_KEY   Get free at huggingface.co    ← slowest but always works
 ```
@@ -73,140 +73,132 @@ HUGGINGFACE_API_KEY   Get free at huggingface.co    ← slowest but always works
 
 ```
 main.py                           Entry point (gunicorn: main:app)
-app.py                            Flask app factory — v8: registers mirrorfish_bp + analytics_bp
-requirements.txt                  All deps (unchanged — no new packages needed)
+app.py                            v8: registers mirrorfish_bp + analytics_bp
+requirements.txt                  No new packages — uses requests already in list
 Procfile                          Railway deploy command
 railway.json                      Railway config
+.env.example                      Copy to .env for local dev
 
 core/
   config.py                       All settings from env vars
-  database.py                     v8: get_closed_positions(), dual-tz in webhook_log
+  database.py                     v8: dual-timezone in get_recent_webhooks() + get_closed_positions()
   logger.py                       Centralised logging
   telegram.py                     Telegram alerts + bot message sender
   excel_export.py                 3-sheet Excel export
-  analyzer.py                     Analyzer Pro — pure Python RSI/MACD/ADX/BB/EMA50/VWAP
-  data_engine.py                  Free data layer — Yahoo Finance v8 API, SEC EDGAR
-  timezone_utils.py               v8 REWRITTEN: format_dual_timezone(), parse_and_dual_format()
-  order_sync.py                   v7: sync Alpaca filled orders to local DB
-  analytics_routes.py             v8 NEW: /api/analytics/* routes for Analytics tab
+  analyzer.py                     Analyzer Pro — RSI/MACD/ADX/BB/EMA50/VWAP
+  market_data.py                  Free data: Alpaca → Yahoo → Demo
+  data_engine.py                  yfinance + SEC EDGAR
+  timezone_utils.py               UTC/JST/NY with DST
+  order_sync.py                   Sync Alpaca filled orders to local DB
+  risk_engine.py                  Risk checks
+  analytics_routes.py             NEW v8: /api/analytics/* — per-symbol stats
 
 brokers/
-  alpaca_adapter.py               Alpaca REST API — buy/sell/close/positions/validate
+  alpaca_adapter.py               Alpaca REST API
 
 webhook/
-  handler.py                      Signal processor: validate → risk check → execute → alert
+  handler.py                      Signal processor
   routes.py                       POST /webhook  GET /health
 
-mirrorfish/                       v8 NEW
+mirrorfish/                       NEW v8
   __init__.py
-  engine.py                       Multi-LLM AI engine (Groq/OpenRouter/HuggingFace)
-  routes.py                       /api/mirrorfish/* routes
+  engine.py                       Multi-LLM: Groq → OpenRouter → HuggingFace
+  routes.py                       /api/mirrorfish/status|analyze|portfolio|chat
 
 dashboard/
-  routes.py                       All API routes + Telegram bot command handler
+  routes.py                       All API routes
   templates/
-    login.html                    Password login page
-    dashboard.html                Full 9-tab dashboard
-    analytics_tab.html            v8 NEW: Analytics tab HTML snippet (paste into dashboard.html)
-    mirrorfish_tab.html           v8 NEW: MirrorFish tab HTML snippet (paste into dashboard.html)
+    login.html                    Login page
+    dashboard.html                9-tab dashboard (v8)
 
 research/
-  sec_filings.py                  SEC EDGAR 13F institutional tracker
-  earnings.py                     Earnings whiplash: HV vs IV scanner
-  sector_rotation.py              30-day sector return comparison
-  insider_flow.py                 SEC Form 4 insider buys + unusual options flow
+  sec_filings.py                  SEC EDGAR 13F institutional
+  earnings.py                     Earnings whiplash scanner
+  sector_rotation.py              Sector rotation detector
+  insider_flow.py                 Form 4 insider buys + options flow
+  ai_research.py                  AI research helpers
 ```
 
 ---
 
 ## Dashboard Tabs (v8)
 
-| Tab           | Features                                                                  |
-| ------------- | ------------------------------------------------------------------------- |
-| Dashboard     | Account stats, kill switch, webhook URL, signal log (dual-tz), Excel      |
-| Positions     | Open positions with P&L, close selected (full or partial qty)             |
-| History       | P&L summary, closed positions with dual-tz timestamps, Excel download     |
-| Analyzer Pro  | Signal grid (RSI/MACD/ADX/BB/EMA50/VWAP), price charts, compare tab      |
-| Analytics     | NEW: per-symbol trade count, P&L, win rate charts, equity curve           |
-| MirrorFish AI | NEW: symbol analysis, portfolio health, free-form market chat             |
-| Research      | 13F institutional, earnings whiplash, sector rotation, insider+options    |
-| Sessions      | ICT session analysis: Asia / London / New York                            |
-| EOD Journal   | P&L calendar, equity curve, Excel export                                  |
+| Tab            | Features                                                           |
+| -------------- | ------------------------------------------------------------------ |
+| Dashboard      | Account stats, kill switch, webhook URL, signals log (dual-tz)    |
+| Positions      | Open positions with P&L, totals row, close button                 |
+| History        | P&L summary, closed positions (dual-tz), all trades, Excel        |
+| Analyzer Pro   | Signal grid, price charts, EMA overlay, compare tab               |
+| Research       | 13F institutional, earnings whiplash, sector rotation, insider     |
+| Sessions       | ICT session analysis: Asia / London / New York                     |
+| EOD Journal    | P&L calendar, equity curve, Excel export                           |
+| Analytics ★NEW | Per-symbol trade count, P&L bars, win rate bars, equity curve      |
+| MirrorFish ★NEW| Symbol AI analysis, portfolio health, free-form chat               |
+| Settings       | Env var reference, Telegram setup, TradingView JSON template       |
 
 ---
 
-## MirrorFish AI — How It Works
+## v8 Changes
 
-1. Reads your Analyzer Pro signal data (RSI, MACD, etc.) for context
-2. Sends structured prompt to free LLM (Groq → OpenRouter → HuggingFace)
-3. Returns JSON: prediction (BULLISH/BEARISH/NEUTRAL), confidence, key levels, reasoning
-4. Portfolio mode: analyzes all open positions + recent P&L via LLM
-5. Chat mode: free-form market questions answered by the LLM
+### FIX 1: Recent Signals now shows dual timezone (US + JST)
+- `core/database.py`: `get_recent_webhooks()` adds `timestamp_display` field
+  - Format: `"2026-05-23 09:35 EDT  |  22:35 JST"` via inline pytz formatting
+- `dashboard/templates/dashboard.html`: webhook log uses `w.timestamp_display`
 
-Provider priority: Groq first (fastest, LLaMA 70B free), then OpenRouter, then HuggingFace.
-No additional pip packages needed — uses `requests` already in requirements.txt.
+### FIX 2: equityChart initialization error
+- All chart canvases now call `Chart.getChart(ctx)` before creating new chart
+- Existing pattern in v7 extended to new Analytics charts
 
-### Getting free API keys
-- **Groq**: console.groq.com → API Keys → Create → copy → Railway GROQ_API_KEY
-- **OpenRouter**: openrouter.ai → Keys → Create → copy → Railway OPENROUTER_API_KEY
-- **HuggingFace**: huggingface.co → Settings → Access Tokens → New token (read) → HUGGINGFACE_API_KEY
+### NEW: Analytics Tab (tab 7)
+- `core/analytics_routes.py`: Flask Blueprint `/api/analytics/summary`
+- Computes per-symbol: trades, wins, losses, win rate %, total P&L, avg win/loss, profit factor, best/worst
+- 4 Chart.js charts: equity curve, stacked wins/losses bar, P&L bar, win rate bar
+- Full per-symbol breakdown table with colour coding
+
+### NEW: MirrorFish AI Tab (tab 8)
+- `mirrorfish/engine.py`: multi-provider LLM client (Groq → OpenRouter → HuggingFace)
+  - Groq is free at console.groq.com — LLaMA 3.3 70B, fastest
+  - Falls back automatically to next available provider
+  - Zero new pip packages needed (uses `requests` already installed)
+- `mirrorfish/routes.py`: 4 endpoints
+  - `GET  /api/mirrorfish/status`    — which providers are configured
+  - `POST /api/mirrorfish/analyze`   — AI analysis of a symbol
+  - `POST /api/mirrorfish/portfolio` — AI commentary on full portfolio
+  - `POST /api/mirrorfish/chat`      — free-form market chat
+- Tab features: symbol analyzer card, portfolio health card, chat box with quick prompts
+- Built-in setup guide shown when no API key configured
+
+### Unchanged from v7
+- All v7 bugfixes (chart date ranges, order sync, validate_symbol fail-open)
+- All existing tabs: Dashboard, Positions, History, Analyzer Pro, Research, Sessions, EOD Journal, Settings
+- Telegram bot commands, kill switch, Excel export
+- All 29 tests still pass
 
 ---
 
-## Analytics Tab — How It Works
+## Getting Free API Keys for MirrorFish
 
-Reads `closed_positions` table (populated by v7 order_sync.py).
-Computes per symbol: trade count, wins, losses, win rate %, total P&L, avg win/loss, profit factor.
-Renders 4 Chart.js charts: equity curve, stacked bar (wins/losses), P&L bar, win rate bar.
-Route: GET /api/analytics/summary
+| Provider     | URL                   | Time   | Model               | Var Name              |
+| ------------ | --------------------- | ------ | ------------------- | --------------------- |
+| Groq         | console.groq.com      | 2 min  | LLaMA 3.3 70B       | GROQ_API_KEY          |
+| OpenRouter   | openrouter.ai         | 2 min  | LLaMA 3.3 70B :free | OPENROUTER_API_KEY    |
+| HuggingFace  | huggingface.co/settings | 1 min | Mistral 7B          | HUGGINGFACE_API_KEY   |
+
+All run online on Railway — no local GPU or laptop needed.
 
 ---
 
-## v8 Changes Summary
+## Railway Deploy
 
-### NEW: MirrorFish AI tab
-- `mirrorfish/engine.py` — multi-provider LLM client (Groq, OpenRouter, HuggingFace)
-- `mirrorfish/routes.py` — /api/mirrorfish/status, /analyze, /portfolio, /chat
-- `dashboard/templates/mirrorfish_tab.html` — full tab UI with symbol analyzer, portfolio health, chat
-- Zero new pip packages (uses requests)
-
-### NEW: Analytics tab
-- `core/analytics_routes.py` — /api/analytics/summary, /api/analytics/symbol/<sym>
-- `dashboard/templates/analytics_tab.html` — 4 charts + per-symbol table
-- Fixed `equityChart` initialization error (destroy before recreate pattern)
-
-### FIXED: Recent Signals dual-timezone
-- `core/timezone_utils.py` — `parse_and_dual_format()` returns "2026-05-23 09:35 EDT | 22:35 JST"
-- `core/database.py` — `get_webhook_log()` now includes `timestamp_display` dual-tz field
-- Dashboard webhook log table updated to show both US and JST times on each row
-
-### HOW TO INTEGRATE INTO dashboard.html
-1. Add two tab buttons to the nav:
-   ```html
-   <button class="tab-btn" onclick="switchTab('analytics')" id="tab-analytics">📊 Analytics</button>
-   <button class="tab-btn" onclick="switchTab('mirrorfish')" id="tab-mirrorfish">🐟 MirrorFish AI</button>
-   ```
-2. Paste content of `analytics_tab.html` and `mirrorfish_tab.html` before the closing `</div>` of your tabs container.
-3. In your `switchTab(tab)` JS function, add:
-   ```javascript
-   if (tab === 'analytics') loadAnalytics();
-   if (tab === 'mirrorfish') loadMirrorFish();
-   ```
-4. In your webhook log render function, update the timestamp cell to use `row.timestamp_display` instead of `row.timestamp`.
-5. Register blueprints in `app.py` (already done in v8 app.py).
+1. Push this entire folder to GitHub
+2. Railway auto-deploys from main branch
+3. Add any new env vars (GROQ_API_KEY etc) in Railway → Variables
+4. Visit `/api/mirrorfish/status` to verify AI provider is detected
+5. Visit `/api/analytics/summary` to verify analytics route is live
 
 ---
 
 ## Tests
 
 Run: `python test_bot.py`
-Should pass all existing 29 tests (v8 adds no breaking changes to existing modules).
-
----
-
-## Railway Deploy
-
-1. Push v8 changes to GitHub
-2. Railway auto-deploys from main branch
-3. Add new env vars: GROQ_API_KEY (and/or others)
-4. Visit /api/mirrorfish/status to verify provider is detected
+All 29 existing tests pass. v8 adds no breaking changes to existing modules.
