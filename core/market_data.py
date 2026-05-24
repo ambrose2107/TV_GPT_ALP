@@ -190,8 +190,12 @@ def _gen_price_series(seed_price: float, n: int, vol: float = 0.015) -> list:
     return prices
 
 
-def demo_bars(symbol: str, n: int = 200, weekly: bool = False) -> list:
-    """Generate realistic demo OHLCV bars with correct dates going back from today."""
+def demo_bars(symbol: str, n: int = 200, weekly: bool = False,
+              intraday_minutes: int = 0) -> list:
+    """
+    Generate realistic demo OHLCV bars with correct timestamps.
+    intraday_minutes: 0=daily/weekly, 5=5m, 15=15m, 60=1h, 240=4h
+    """
     seed = {"AAPL":182,"MSFT":415,"NVDA":875,"TSLA":175,"AMD":160,
             "META":490,"GOOGL":175,"JPM":205,"SPY":520,"QQQ":440,
             "XLK":215,"XLV":140,"XLF":42,"XLY":185,"XLI":125,
@@ -199,13 +203,48 @@ def demo_bars(symbol: str, n: int = 200, weekly: bool = False) -> list:
             "MU":110,"AMZN":185,"NFLX":625,"CRM":290,"NVDA":875,
             "SOXX":220,"GLD":195,"SLV":28,"USO":75,"QQQ":440,
             "IWM":195,"DIA":385}.get(symbol.upper(), 100)
-    closes = _gen_price_series(seed, n)
+
+    # Use tighter volatility for intraday
+    vol = 0.003 if intraday_minutes > 0 else 0.015
+    closes = _gen_price_series(seed, n, vol=vol)
     bars   = []
     now    = datetime.now(timezone.utc)
-    step   = timedelta(weeks=1) if weekly else timedelta(days=1)
-    # Start from n bars ago, skip weekends for daily
-    count  = 0
-    day    = now - step * n
+
+    if intraday_minutes > 0:
+        # Intraday: step by minutes, skip outside market hours (13:30-20:00 UTC = 9:30-16:00 ET)
+        step = timedelta(minutes=intraday_minutes)
+        ts   = now - step * n * 2  # start far enough back
+        count = 0
+        while len(bars) < n:
+            ts += step
+            if ts > now:
+                break
+            # Skip weekends
+            if ts.weekday() >= 5:
+                continue
+            # Only NYSE hours: 13:30-20:00 UTC
+            h, m = ts.hour, ts.minute
+            mins_utc = h * 60 + m
+            if mins_utc < 810 or mins_utc >= 1200:   # 13:30=810, 20:00=1200
+                continue
+            c = closes[count] if count < len(closes) else closes[-1]
+            count += 1
+            o = closes[count-2] if count > 1 else c
+            hi = max(o, c) * (1 + random.uniform(0, 0.002))
+            lo = min(o, c) * (1 - random.uniform(0, 0.002))
+            bars.append({
+                "t":      ts.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "o":      round(o,2), "h": round(hi,2),
+                "l":      round(lo,2), "c": c,
+                "v":      int(random.uniform(50000, 2000000)),
+                "source": "demo"
+            })
+        return bars
+
+    # Daily / weekly
+    step  = timedelta(weeks=1) if weekly else timedelta(days=1)
+    count = 0
+    day   = now - step * n
     for i in range(n * 2):  # extra iterations to skip weekends
         if len(bars) >= n:
             break
@@ -304,7 +343,13 @@ def get_bars(symbol: str, period: str = "1y") -> list | None:
 
     # 3. Demo fallback (sandbox — all sources blocked)
     logger.warning(f"⚠️ Demo: {symbol} {period} ({alp_limit} bars)")
-    return demo_bars(symbol, alp_limit, weekly=weekly)
+    # Pass intraday_minutes so demo generates correct timestamps
+    intraday_min = 0
+    if period == "5m":   intraday_min = 5
+    elif period == "15m": intraday_min = 15
+    elif period == "1h":  intraday_min = 60
+    elif period == "4h":  intraday_min = 240
+    return demo_bars(symbol, alp_limit, weekly=weekly, intraday_minutes=intraday_min)
 
 
 def get_quote_live(symbol: str) -> dict:

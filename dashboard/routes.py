@@ -209,7 +209,7 @@ def api_analyze():
 # ── Stock chart data ──────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/chart_data", methods=["POST"])
 def api_chart_data():
-    e = _auth(); 
+    e = _auth()
     if e: return e
     data   = request.json or {}
     symbol = data.get("symbol","").upper()
@@ -217,30 +217,43 @@ def api_chart_data():
     try:
         from core.market_data import get_bars, PERIOD_CONFIG
         from datetime import datetime
-        # period is passed directly — e.g. "1mo","3mo","6mo","1y","3y","5y","10y"
+
         bars = get_bars(symbol, period)
         if not bars:
             return jsonify({"error": "No data available"}), 404
 
-        # Smart date formatting based on period
-        long_periods = ("3y","5y","10y","3Y","5Y","10Y")
-        mid_periods  = ("1y","1W","1D")
+        # ── Smart date label formatting based on period ─────────────────────
+        # Intraday periods need time, not just date
+        intraday_periods = ("5m","15m","1h","4h")
+        long_periods     = ("3y","5y","10y","3Y","5Y","10Y")
+        mid_periods      = ("1y","1W","1D")
+
+        period_labels = {
+            "5m":"5 Min","15m":"15 Min","1h":"1 Hour","4h":"4 Hour",
+            "1mo":"1 Month","3mo":"3 Months","6mo":"6 Months",
+            "1y":"1 Year","1D":"Daily","1W":"Weekly",
+            "3y":"3 Years","5y":"5 Years","10y":"10 Years",
+        }
+
         dates = []
         for b in bars:
             try:
                 dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
-                if period in long_periods:
+                if period in intraday_periods:
+                    # Show date only at day boundaries, otherwise just time
+                    dates.append(dt.strftime("%m/%d %H:%M"))
+                elif period in long_periods:
                     dates.append(dt.strftime("%b %Y"))
                 elif period in mid_periods:
-                    dates.append(dt.strftime("%b %d %y"))
+                    dates.append(dt.strftime("%b %d '%y"))
                 else:
+                    # 1mo, 3mo, 6mo — daily, show month+day
                     dates.append(dt.strftime("%b %d"))
             except:
                 dates.append("")
 
         closes = [b.get("c") for b in bars]
 
-        # Compute EMAs server-side
         def ema_series(data, span):
             if not data or len(data) < span: return []
             k = 2/(span+1)
@@ -258,19 +271,33 @@ def api_chart_data():
         ema63  = ema_series(c_valid, 63)
         ema200 = ema_series(c_valid, 200) if len(c_valid) >= 200 else []
 
+        # Max tick limit based on period for clean X-axis
+        max_ticks = 8
+        if period in intraday_periods:
+            max_ticks = 12
+        elif period in ("1mo",):
+            max_ticks = 8
+        elif period in ("3mo","6mo"):
+            max_ticks = 10
+        elif period in long_periods:
+            max_ticks = 8
+
         return jsonify({
-            "symbol":    symbol,
-            "period":    period,
-            "dates":     dates,
-            "open":      [b.get("o") for b in bars],
-            "high":      [b.get("h") for b in bars],
-            "low":       [b.get("l") for b in bars],
-            "close":     closes,
-            "volume":    [b.get("v") for b in bars],
-            "ema9":      ema9, "ema21": ema21,
-            "ema63":     ema63, "ema200": ema200,
-            "source":    bars[0].get("source","demo") if bars else "demo",
-            "bar_count": len(bars),
+            "symbol":     symbol,
+            "period":     period,
+            "period_label": period_labels.get(period, period),
+            "dates":      dates,
+            "open":       [b.get("o") for b in bars],
+            "high":       [b.get("h") for b in bars],
+            "low":        [b.get("l") for b in bars],
+            "close":      closes,
+            "volume":     [b.get("v") for b in bars],
+            "ema9":       ema9, "ema21": ema21,
+            "ema63":      ema63, "ema200": ema200,
+            "source":     bars[0].get("source","demo") if bars else "demo",
+            "bar_count":  len(bars),
+            "max_ticks":  max_ticks,
+            "is_intraday": period in intraday_periods,
             "date_range": f"{dates[0] if dates else ''} → {dates[-1] if dates else ''}",
         })
     except Exception as ex:
@@ -279,7 +306,7 @@ def api_chart_data():
 # ── Compare stocks ────────────────────────────────────────────────────────────
 @dashboard_bp.route("/api/compare", methods=["POST"])
 def api_compare():
-    e = _auth(); 
+    e = _auth()
     if e: return e
     data    = request.json or {}
     symbols = [s.strip().upper() for s in data.get("symbols",[]) if s.strip()][:8]
@@ -289,8 +316,10 @@ def api_compare():
     try:
         from core.market_data import get_bars
         from datetime import datetime
-        long_p = ("3y","5y","10y")
-        result = {}
+        intraday_periods = ("5m","15m","1h","4h")
+        long_p  = ("3y","5y","10y","3Y","5Y","10Y")
+        mid_p   = ("1y","1W","1D")
+        result  = {}
         for sym in symbols:
             bars = get_bars(sym, period)
             if not bars: continue
@@ -298,8 +327,14 @@ def api_compare():
             for b in bars:
                 try:
                     dt = datetime.fromisoformat(b["t"].replace("Z","+00:00"))
-                    fmt = "%b %Y" if period in long_p else "%b %d %y"
-                    dates.append(dt.strftime(fmt))
+                    if period in intraday_periods:
+                        dates.append(dt.strftime("%m/%d %H:%M"))
+                    elif period in long_p:
+                        dates.append(dt.strftime("%b %Y"))
+                    elif period in mid_p:
+                        dates.append(dt.strftime("%b %d '%y"))
+                    else:
+                        dates.append(dt.strftime("%b %d"))
                 except:
                     dates.append("")
                 closes.append(b.get("c"))
@@ -310,6 +345,7 @@ def api_compare():
                 "dates":  dates, "norm": norm, "closes": closes,
                 "source": bars[0].get("source","demo") if bars else "demo",
                 "period": period, "bar_count": len(bars),
+                "is_intraday": period in intraday_periods,
                 "date_range": f"{dates[0] if dates else ''} → {dates[-1] if dates else ''}",
             }
         return jsonify(result)
