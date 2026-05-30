@@ -193,82 +193,108 @@ def _gen_price_series(seed_price: float, n: int, vol: float = 0.015) -> list:
 def demo_bars(symbol: str, n: int = 200, weekly: bool = False,
               intraday_minutes: int = 0) -> list:
     """
-    Generate realistic demo OHLCV bars with correct timestamps.
+    Generate demo OHLCV bars with CORRECT timestamps ending at TODAY.
+    Works backwards from now to find the true start date, then fills forward.
     intraday_minutes: 0=daily/weekly, 5=5m, 15=15m, 60=1h, 240=4h
     """
-    seed = {"AAPL":182,"MSFT":415,"NVDA":875,"TSLA":175,"AMD":160,
-            "META":490,"GOOGL":175,"JPM":205,"SPY":520,"QQQ":440,
-            "XLK":215,"XLV":140,"XLF":42,"XLY":185,"XLI":125,
-            "XLC":95,"XLP":78,"XLE":90,"XLB":88,"XLU":68,"XLRE":38,
-            "MU":110,"AMZN":185,"NFLX":625,"CRM":290,"NVDA":875,
-            "SOXX":220,"GLD":195,"SLV":28,"USO":75,"QQQ":440,
-            "IWM":195,"DIA":385}.get(symbol.upper(), 100)
+    # ── Updated seed prices reflecting ~May 2026 levels ──────────────────────
+    SEEDS = {
+        "AAPL":200, "MSFT":420, "NVDA":130, "TSLA":255, "AMD":115,
+        "META":585, "GOOGL":170, "JPM":240, "SPY":575, "QQQ":490,
+        "XLK":230, "XLV":145, "XLF":48,  "XLY":195, "XLI":135,
+        "XLC":100, "XLP":82,  "XLE":88,  "XLB":90,  "XLU":72, "XLRE":40,
+        "MU":100,  "AMZN":210,"NFLX":1080,"CRM":320, "SOXX":230,
+        "GLD":325, "SLV":33,  "USO":72,  "IWM":205, "DIA":425,
+        "PINS":35, "SNAP":12, "UBER":75, "PLTR":115, "COIN":240,
+        "RBLX":55, "DKNG":22, "BITO":25, "NFLX":1080,
+    }
+    seed = SEEDS.get(symbol.upper(), 100)
+    vol  = 0.003 if intraday_minutes > 0 else 0.015
 
-    # Use tighter volatility for intraday
-    vol = 0.003 if intraday_minutes > 0 else 0.015
-    closes = _gen_price_series(seed, n, vol=vol)
-    bars   = []
-    now    = datetime.now(timezone.utc)
+    closes = _gen_price_series(seed, n * 2, vol=vol)  # extra buffer
+
+    now = datetime.now(timezone.utc)
 
     if intraday_minutes > 0:
-        # Intraday: step by minutes, skip outside market hours (13:30-20:00 UTC = 9:30-16:00 ET)
+        # ── Intraday bars: count backwards from NOW through NYSE market hours ─
+        # NYSE hours UTC: 13:30-20:00 (9:30-16:00 ET)
         step = timedelta(minutes=intraday_minutes)
-        ts   = now - step * n * 2  # start far enough back
-        count = 0
-        while len(bars) < n:
-            ts += step
-            if ts > now:
-                break
-            # Skip weekends
+
+        # Start from current bar boundary, walk backwards collecting valid slots
+        ts = now.replace(second=0, microsecond=0)
+        ts_min = ts.hour * 60 + ts.minute
+        ts_min = (ts_min // intraday_minutes) * intraday_minutes
+        ts = ts.replace(hour=ts_min // 60, minute=ts_min % 60)
+
+        valid_slots = []
+        safety = 0
+        while len(valid_slots) < n and safety < n * 20:
+            safety += 1
+            ts -= step
             if ts.weekday() >= 5:
                 continue
-            # Only NYSE hours: 13:30-20:00 UTC
-            h, m = ts.hour, ts.minute
-            mins_utc = h * 60 + m
-            if mins_utc < 810 or mins_utc >= 1200:   # 13:30=810, 20:00=1200
+            mins_utc = ts.hour * 60 + ts.minute
+            if mins_utc < 810 or mins_utc >= 1200:
                 continue
-            c = closes[count] if count < len(closes) else closes[-1]
-            count += 1
-            o = closes[count-2] if count > 1 else c
+            valid_slots.append(ts)
+
+        valid_slots.reverse()  # oldest first
+
+        bars = []
+        for i, slot in enumerate(valid_slots[-n:]):
+            c = closes[i % len(closes)]
+            o = closes[(i - 1) % len(closes)] if i > 0 else c
             hi = max(o, c) * (1 + random.uniform(0, 0.002))
             lo = min(o, c) * (1 - random.uniform(0, 0.002))
             bars.append({
-                "t":      ts.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                "o":      round(o,2), "h": round(hi,2),
-                "l":      round(lo,2), "c": c,
-                "v":      int(random.uniform(50000, 2000000)),
+                "t":      slot.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "o":      round(o, 2), "h": round(hi, 2),
+                "l":      round(lo, 2), "c": round(c, 2),
+                "v":      int(random.uniform(50_000, 2_000_000)),
                 "source": "demo"
             })
         return bars
 
-    # Daily / weekly
-    step  = timedelta(weeks=1) if weekly else timedelta(days=1)
+    # ── Daily / weekly bars ───────────────────────────────────────────────────
+    # Count backwards from TODAY to find the exact start date
+    step = timedelta(weeks=1) if weekly else timedelta(days=1)
+    start = now
     count = 0
-    day   = now - step * n
-    for i in range(n * 2):  # extra iterations to skip weekends
+    while count < n:
+        start -= step
+        if not weekly and start.weekday() >= 5:
+            continue
+        count += 1
+
+    # Now walk forward from start, generating exactly n bars ending at/near today
+    bars  = []
+    cidx  = 0
+    d     = start
+    for _ in range(n * 3):  # safety limit
         if len(bars) >= n:
             break
-        day += step
-        if not weekly and day.weekday() >= 5:  # skip Sat/Sun
+        d += step
+        if not weekly and d.weekday() >= 5:
             continue
-        c = closes[count] if count < len(closes) else closes[-1]
-        count += 1
-        o = closes[count-2] if count > 1 else c
-        h = max(o, c) * (1 + random.uniform(0, 0.008))
-        l = min(o, c) * (1 - random.uniform(0, 0.008))
+        if d > now + timedelta(days=3):  # never go more than 3 days past today
+            break
+        c = closes[cidx % len(closes)]
+        cidx += 1
+        o = closes[(cidx - 2) % len(closes)] if cidx > 1 else c
+        hi = max(o, c) * (1 + random.uniform(0, 0.008))
+        lo = min(o, c) * (1 - random.uniform(0, 0.008))
         bars.append({
-            "t":      day.strftime("%Y-%m-%dT00:00:00+00:00"),
-            "o":      round(o,2), "h": round(h,2),
-            "l":      round(l,2), "c": c,
-            "v":      int(random.uniform(5e6, 80e6)),
+            "t":      d.strftime("%Y-%m-%dT00:00:00+00:00"),
+            "o":      round(o, 2),  "h": round(hi, 2),
+            "l":      round(lo, 2), "c": round(c, 2),
+            "v":      int(random.uniform(5_000_000, 80_000_000)),
             "source": "demo"
         })
     return bars
 
 
-# ── UNIFIED get_bars (tries Alpaca → Yahoo → Demo) ───────────────────────────
-# TF → (alpaca_timeframe, bar_count, yahoo_interval, yahoo_period)
-# UI periods map directly to this config
+# ── PERIOD CONFIG ─────────────────────────────────────────────────────────────
+# Maps UI period key → (alpaca_timeframe, bar_count, yahoo_interval, yahoo_period)
 PERIOD_CONFIG = {
     # Intraday
     "5m":   ("5Min",  100,  "5m",  "5d"),
@@ -291,10 +317,10 @@ PERIOD_CONFIG = {
     "5Y":   ("1Day",  1260, "1d",  "5y"),
     "10Y":  ("1Week", 520,  "1wk", "10y"),
 }
+# Backward-compat aliases
+ALPACA_TF_MAP = {k: (v[0], v[1]) for k, v in PERIOD_CONFIG.items()}
+YAHOO_MAP     = {k: (v[2], v[3]) for k, v in PERIOD_CONFIG.items()}
 
-# Keep backward compat
-ALPACA_TF_MAP = {k: (v[0], v[1]) for k,v in PERIOD_CONFIG.items()}
-YAHOO_MAP     = {k: (v[2], v[3]) for k,v in PERIOD_CONFIG.items()}
 
 def get_bars(symbol: str, period: str = "1y") -> list | None:
     """

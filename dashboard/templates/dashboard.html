@@ -163,11 +163,14 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <select id="refresh-select" onchange="setAutoRefresh()" style="font-size:11px;padding:3px 6px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3">
         <option value="0">Off</option>
         <option value="1">1s</option>
+        <option value="3">3s</option>
         <option value="5">5s</option>
         <option value="10">10s</option>
         <option value="15">15s</option>
         <option value="30" selected>30s</option>
         <option value="60">60s</option>
+        <option value="120">2m</option>
+        <option value="300">5m</option>
       </select>
       <span id="refresh-countdown" style="min-width:24px;color:#58a6ff"></span>
     </div>
@@ -455,9 +458,30 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 </div>
 
-<!-- ── ANALYTICS TAB v8 ──────────────────────────────────────────────────── -->
+<!-- ── ANALYTICS TAB v9 — Institutional Grade ──────────────────────────── -->
 <div class="pane" id="pane-ana8">
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px" id="an-cards">
+
+  <!-- Controls -->
+  <div class="sec" style="margin-bottom:14px">
+    <div class="sec-hdr"><h2>📊 Trade Analytics — Alpaca Closed Orders</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:#8b949e">From:</label>
+        <input type="date" id="an-date-from" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:5px 9px;font-size:12px">
+        <label style="font-size:11px;color:#8b949e">To:</label>
+        <input type="date" id="an-date-to" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:5px 9px;font-size:12px">
+        <button class="btn btn-b btn-s" onclick="loadAnalytics8(true)">🔄 Load</button>
+        <button class="btn btn-n btn-s" onclick="anSetRange('ytd')">YTD</button>
+        <button class="btn btn-n btn-s" onclick="anSetRange('1m')">1M</button>
+        <button class="btn btn-n btn-s" onclick="anSetRange('3m')">3M</button>
+        <button class="btn btn-n btn-s" onclick="anSetRange('6m')">6M</button>
+        <button class="btn btn-n btn-s" onclick="anSetRange('all')">All</button>
+        <span id="an-source-badge" style="font-size:10px;color:#8b949e"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
     <div class="card"><div class="lbl">Total Trades</div><div class="val" id="an-total-trades">—</div></div>
     <div class="card"><div class="lbl">Win Rate</div><div class="val g" id="an-win-rate">—</div></div>
     <div class="card"><div class="lbl">Total P&amp;L</div><div class="val" id="an-total-pnl">—</div></div>
@@ -465,37 +489,73 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div class="card"><div class="lbl">Avg Trade</div><div class="val" id="an-avg-trade">—</div></div>
     <div class="card"><div class="lbl">Best Trade</div><div class="val g" id="an-best">—</div></div>
     <div class="card"><div class="lbl">Worst Trade</div><div class="val r" id="an-worst">—</div></div>
+    <div class="card"><div class="lbl">Max Drawdown</div><div class="val r" id="an-dd">—</div></div>
+    <div class="card"><div class="lbl">Sharpe (approx)</div><div class="val b" id="an-sharpe">—</div></div>
+    <div class="card"><div class="lbl">Total Invested</div><div class="val" id="an-invested">—</div></div>
+    <div class="card"><div class="lbl">Overall ROI</div><div class="val" id="an-roi">—</div></div>
+    <div class="card"><div class="lbl">Expectancy</div><div class="val" id="an-exp">—</div></div>
   </div>
-  <div class="sec" style="margin-bottom:14px">
-    <div class="sec-hdr"><h2>📈 Equity Curve</h2></div>
-    <div style="position:relative;height:220px"><canvas id="anEquityChart" aria-label="Equity curve"></canvas></div>
+
+  <!-- Equity Curve + Drawdown -->
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px">
+    <div class="sec">
+      <div class="sec-hdr"><h2>📈 Equity Curve</h2></div>
+      <div style="position:relative;height:240px"><canvas id="anEquityChart"></canvas></div>
+    </div>
+    <div class="sec">
+      <div class="sec-hdr"><h2>📉 Drawdown</h2></div>
+      <div style="position:relative;height:240px"><canvas id="anDrawdownChart"></canvas></div>
+    </div>
   </div>
+
+  <!-- 4 Charts Grid -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
     <div class="sec">
       <div class="sec-hdr"><h2>🏢 Trades by Company</h2></div>
-      <div style="position:relative;height:260px"><canvas id="anTradesChart" aria-label="Trades per symbol"></canvas></div>
+      <div style="position:relative;height:260px"><canvas id="anTradesChart"></canvas></div>
     </div>
     <div class="sec">
-      <div class="sec-hdr"><h2>💰 P&amp;L by Symbol</h2></div>
-      <div style="position:relative;height:260px"><canvas id="anPnlChart" aria-label="P&L per symbol"></canvas></div>
+      <div class="sec-hdr"><h2>💰 Total P&amp;L by Symbol</h2></div>
+      <div style="position:relative;height:260px"><canvas id="anPnlChart"></canvas></div>
+    </div>
+    <div class="sec">
+      <div class="sec-hdr"><h2>🎯 Win Rate by Symbol</h2></div>
+      <div style="position:relative;height:260px"><canvas id="anWinChart"></canvas></div>
+    </div>
+    <div class="sec">
+      <div class="sec-hdr"><h2>📅 Monthly P&amp;L</h2></div>
+      <div style="position:relative;height:260px"><canvas id="anMonthlyChart"></canvas></div>
     </div>
   </div>
-  <div class="sec" style="margin-bottom:14px">
-    <div class="sec-hdr"><h2>🎯 Win Rate by Symbol</h2></div>
-    <div style="position:relative;height:220px"><canvas id="anWinChart" aria-label="Win rate per symbol"></canvas></div>
+
+  <!-- Portfolio Allocation Pie -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    <div class="sec">
+      <div class="sec-hdr"><h2>🥧 Portfolio Allocation (% Capital Deployed)</h2></div>
+      <div style="position:relative;height:280px"><canvas id="anPieChart"></canvas></div>
+    </div>
+    <div class="sec">
+      <div class="sec-hdr"><h2>📊 ROI % by Symbol</h2></div>
+      <div style="position:relative;height:280px"><canvas id="anRoiChart"></canvas></div>
+    </div>
   </div>
+
+  <!-- Per-Symbol Table -->
   <div class="sec">
-    <div class="sec-hdr"><h2>📋 Per-Symbol Breakdown</h2></div>
+    <div class="sec-hdr"><h2>📋 Institutional Breakdown — Per Symbol</h2></div>
     <div style="overflow-x:auto">
       <table><thead><tr>
         <th>Symbol</th><th>Trades</th><th>W</th><th>L</th>
-        <th>Win%</th><th>Total P&amp;L</th><th>Avg Win</th>
-        <th>Avg Loss</th><th>Profit Factor</th><th>Best</th><th>Worst</th>
+        <th>Win%</th><th>Total P&amp;L</th><th>Avg Win</th><th>Avg Loss</th>
+        <th>Profit Factor</th><th>ROI%</th><th>Invested $</th><th>Best</th><th>Worst</th>
       </tr></thead>
-      <tbody id="an-tbody"><tr><td colspan="11" style="text-align:center;color:#8b949e">Click Analytics tab to load.</td></tr></tbody>
+      <tbody id="an-tbody"><tr><td colspan="13" style="text-align:center;color:#8b949e">Click Analytics tab to load.</td></tr></tbody>
       </table>
     </div>
   </div>
+
+</div>
+
 </div>
 
 <!-- ── MIRRORFISH AI TAB v8 ──────────────────────────────────────────────── -->
@@ -633,6 +693,33 @@ let anaCharts=[], currentCloseSym='', currentCloseMax=0;
 let lastAnalyzeSymbols=[], lastAnalyzeTFs=[];
 
 const COLORS=['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#10b981'];
+
+// ── TIMEZONE HELPERS ─────────────────────────────────────────────────────────
+function utcToJst(ts) {
+  if(!ts) return '';
+  try {
+    const d = new Date(ts.replace(' ','T').replace(/([^Z])$/, '$1Z'));
+    if(isNaN(d)) return '';
+    const jst = new Date(d.getTime() + 9*3600*1000);
+    const hh = String(jst.getUTCHours()).padStart(2,'0');
+    const mm = String(jst.getUTCMinutes()).padStart(2,'0');
+    const ymd = jst.toISOString().slice(0,10);
+    return `${ymd} ${hh}:${mm} JST`;
+  } catch(e){ return ''; }
+}
+function utcToNy(ts) {
+  if(!ts) return '';
+  try {
+    const d = new Date(ts.replace(' ','T').replace(/([^Z])$/, '$1Z'));
+    if(isNaN(d)) return '';
+    const off = isDST(d) ? -4 : -5;
+    const ny  = new Date(d.getTime() + off*3600*1000);
+    const hh  = String(ny.getUTCHours()).padStart(2,'0');
+    const mm  = String(ny.getUTCMinutes()).padStart(2,'0');
+    const tz  = isDST(d)?'EDT':'EST';
+    return `${ny.toISOString().slice(0,10)} ${hh}:${mm} ${tz}`;
+  } catch(e){ return ''; }
+}
 const fmt = v => v==null?'—':'$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtPct = v => v==null?'—':(parseFloat(v)>=0?'+':'')+parseFloat(v).toFixed(2)+'%';
 const pc  = v => parseFloat(v)>=0?'g':'r';
@@ -773,7 +860,10 @@ async function loadClosed() {
       const isLoss   = pnl != null && pnl < 0;
       const rowBg    = isProfit ? 'background:#0d2818' : isLoss ? 'background:#1a0a0a' : '';
       html += `<tr style="${rowBg}">
-        <td style="color:#8b949e;font-size:11px">${(p.closed_at||'').slice(0,16)}</td>
+        <td style="color:#8b949e;font-size:11px">
+          ${(p.closed_at||'').slice(0,16).replace('T',' ')} UTC<br>
+          <span style="color:#58a6ff">${utcToJst(p.closed_at||'')}</span>
+        </td>
         <td><strong>${p.symbol}</strong></td>
         <td><span class="tag ${p.side==='long'?'tg':'tr'}">${(p.side||'LONG').toUpperCase()}</span></td>
         <td>${p.qty||'—'}</td>
@@ -800,7 +890,10 @@ async function loadTrades() {
     trades.forEach(t => {
       const ac = t.action==='buy'?'g':t.action==='sell'?'r':'y';
       html += `<tr>
-        <td style="color:#8b949e;font-size:11px">${(t.timestamp||'').slice(0,16)}</td>
+        <td style="color:#8b949e;font-size:11px">
+          ${(t.timestamp||'').slice(0,16)} UTC<br>
+          <span style="color:#58a6ff">${utcToJst(t.timestamp||'')}</span>
+        </td>
         <td><strong>${t.symbol}</strong></td>
         <td class="${ac}">${(t.action||'').toUpperCase()}</td>
         <td>${t.quantity}</td><td>${t.order_type}</td>
@@ -1843,116 +1936,249 @@ function renderSectors(d) {
 }
 
 
-// ── ANALYTICS TAB (v8) ───────────────────────────────────────────────────────
-let anLoaded=false, anEquityInst=null, anTradesInst=null, anPnlInst=null, anWinInst=null;
+// ── ANALYTICS TAB v9 — Institutional Grade ───────────────────────────────────
+let anLoaded=false;
+let anEquityInst=null, anDrawdownInst=null, anTradesInst=null;
+let anPnlInst=null, anWinInst=null, anMonthlyInst=null;
+let anPieInst=null, anRoiInst=null;
 
-function loadAnalytics8() {
-  if(anLoaded) return;
-  apiFetch('/api/analytics/summary').then(data=>{
-    anLoaded=true;
-    renderAnalytics(data);
-  }).catch(e=>console.error('Analytics error:',e));
+function anSetRange(range) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const today = toDate(now);
+  let from = '';
+  if(range === 'ytd')     from = `${now.getFullYear()}-01-01`;
+  else if(range === '1m') from = toDate(new Date(now - 30*86400000));
+  else if(range === '3m') from = toDate(new Date(now - 90*86400000));
+  else if(range === '6m') from = toDate(new Date(now - 180*86400000));
+  else if(range === 'all') { from=''; }
+  if($('an-date-from')) $('an-date-from').value = from;
+  if($('an-date-to'))   $('an-date-to').value   = range === 'all' ? '' : today;
+  loadAnalytics8(true);
 }
 
-function renderAnalytics(data) {
-  const t=data.totals||{};
-  const pc2=v=>parseFloat(v)>=0?'g':'r';
-  $('an-total-trades').textContent=t.total_trades??'—';
-  $('an-win-rate').textContent=t.win_rate!=null?t.win_rate+'%':'—';
-  const pEl=$('an-total-pnl');
-  pEl.textContent=t.total_pnl!=null?fmt(t.total_pnl):'—';
-  pEl.className='val '+pc2(t.total_pnl||0);
-  $('an-pf').textContent=t.profit_factor??'—';
-  const avgEl=$('an-avg-trade');
-  avgEl.textContent=t.avg_trade_pnl!=null?fmt(t.avg_trade_pnl):'—';
-  avgEl.className='val '+pc2(t.avg_trade_pnl||0);
-  $('an-best').textContent=t.best_trade!=null?fmt(t.best_trade):'—';
-  $('an-worst').textContent=t.worst_trade!=null?fmt(t.worst_trade):'—';
+function loadAnalytics8(force=false) {
+  if(anLoaded && !force) return;
+  const from = $('an-date-from')?.value || '';
+  const to   = $('an-date-to')?.value   || '';
+  const body = {};
+  if(from) body.date_from = from;
+  if(to)   body.date_to   = to;
+  apiPost('/api/analytics/summary', body)
+    .then(data => { anLoaded=true; renderAnalytics9(data); })
+    .catch(e => console.error('Analytics error:', e));
+}
+
+function _dChart(id) {
+  const ctx = $(id); if(!ctx) return null;
+  const ex = Chart.getChart(ctx); if(ex) ex.destroy(); return ctx;
+}
+
+function renderAnalytics9(data) {
+  const t = data.totals || {};
+  const pcc = v => parseFloat(v||0) >= 0 ? 'g' : 'r';
+
+  // KPI cards
+  $('an-total-trades').textContent = t.total_trades ?? '—';
+  const wrEl = $('an-win-rate');
+  wrEl.textContent  = t.win_rate != null ? t.win_rate + '%' : '—';
+  wrEl.className    = 'val ' + (t.win_rate >= 50 ? 'g' : 'r');
+  const pnlEl = $('an-total-pnl');
+  pnlEl.textContent = t.total_pnl != null ? fmt(t.total_pnl) : '—';
+  pnlEl.className   = 'val ' + pcc(t.total_pnl);
+  $('an-pf').textContent   = t.profit_factor ?? '—';
+  const avgEl = $('an-avg-trade');
+  avgEl.textContent = t.avg_trade_pnl != null ? fmt(t.avg_trade_pnl) : '—';
+  avgEl.className   = 'val ' + pcc(t.avg_trade_pnl);
+  $('an-best').textContent   = t.best_trade  != null ? fmt(t.best_trade)  : '—';
+  $('an-worst').textContent  = t.worst_trade != null ? fmt(t.worst_trade) : '—';
+  const ddEl = $('an-dd');
+  ddEl.textContent  = t.max_drawdown != null ? fmt(t.max_drawdown) : '—';
+  $('an-sharpe').textContent  = t.sharpe_approx ?? '—';
+  $('an-invested').textContent= t.total_investment != null ? fmt(t.total_investment) : '—';
+  const roiEl = $('an-roi');
+  roiEl.textContent = t.overall_roi_pct != null ? (t.overall_roi_pct >= 0 ? '+' : '') + t.overall_roi_pct + '%' : '—';
+  roiEl.className   = 'val ' + pcc(t.overall_roi_pct);
+  const expEl = $('an-exp');
+  expEl.textContent = t.expectancy != null ? fmt(t.expectancy) : '—';
+  expEl.className   = 'val ' + pcc(t.expectancy);
+
+  const src = $('an-source-badge');
+  if(src) src.textContent = `Source: ${data.source || 'db'} | ${data.raw_count || 0} closed trades`;
 
   // Symbol table
-  const tbody=$('an-tbody');
-  if(data.symbols&&data.symbols.length>0){
-    tbody.innerHTML=data.symbols.map(s=>{
-      const pnlCls=s.total_pnl>=0?'g':'r';
-      const wrCls=s.win_rate>=60?'g':s.win_rate<40?'r':'y';
+  const tbody = $('an-tbody');
+  const syms  = data.symbols || [];
+  if(syms.length > 0) {
+    tbody.innerHTML = syms.map(s => {
+      const pc2 = v => parseFloat(v||0) >= 0 ? 'g' : 'r';
+      const wrC = s.win_rate >= 60 ? 'g' : s.win_rate < 40 ? 'r' : 'y';
       return `<tr>
         <td><strong>${s.symbol}</strong></td>
         <td>${s.trades}</td>
         <td class="g">${s.wins}</td><td class="r">${s.losses}</td>
-        <td class="${wrCls}">${s.win_rate}%</td>
-        <td class="${pnlCls}">${fmt(s.total_pnl)}</td>
+        <td class="${wrC}">${s.win_rate}%</td>
+        <td class="${pc2(s.total_pnl)}">${fmt(s.total_pnl)}</td>
         <td class="g">${fmt(s.avg_win)}</td>
         <td class="r">${fmt(s.avg_loss)}</td>
         <td>${s.profit_factor}</td>
+        <td class="${pc2(s.roi_pct)}">${(s.roi_pct||0) >= 0 ? '+' : ''}${s.roi_pct||0}%</td>
+        <td style="color:#8b949e">${fmt(s.total_investment||0)}</td>
         <td class="g">${fmt(s.max_win)}</td>
         <td class="r">${fmt(s.max_loss)}</td>
       </tr>`;
     }).join('');
   } else {
-    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;color:#8b949e">No closed trade data found. Close some positions first.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e">
+      No closed trade data. Close some positions or connect Alpaca with filled orders.</td></tr>`;
   }
 
-  // Charts
-  const curve=data.equity_curve||[];
-  const ctx1=$('anEquityChart');
-  if(ctx1){
-    const ex=Chart.getChart(ctx1); if(ex)ex.destroy(); anEquityInst=null;
-    const vals=curve.map(p=>p.cumulative_pnl);
-    const col=vals.length&&vals[vals.length-1]>=0?'#3fb950':'#f85149';
-    anEquityInst=new Chart(ctx1,{type:'line',
-      data:{labels:curve.map(p=>p.date),datasets:[{label:'Cumulative P&L',data:vals,
-        borderColor:col,backgroundColor:col+'22',fill:true,tension:0.3,
-        pointRadius:vals.length>50?0:3,borderWidth:1.5}]},
+  const curve = data.equity_curve || [];
+  const dd    = data.drawdown || [];
+  const TC    = '#8b949e';
+  const GC    = '#21262d';
+
+  // ── Equity Curve ──
+  const ctx1 = _dChart('anEquityChart');
+  if(ctx1 && curve.length) {
+    const vals = curve.map(p => p.cumulative_pnl);
+    const col  = vals[vals.length-1] >= 0 ? '#3fb950' : '#f85149';
+    anEquityInst = new Chart(ctx1, {type:'line',
+      data:{labels:curve.map(p=>p.date), datasets:[{
+        label:'Cumulative P&L', data:vals,
+        borderColor:col, backgroundColor:col+'18', fill:true,
+        tension:0.3, pointRadius:0, borderWidth:1.5,
+      }]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false}},
-        scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:10},grid:{color:'#21262d'}},
-                y:{ticks:{color:'#8b949e',callback:v=>'$'+v.toFixed(0)},grid:{color:'#21262d'}}}}
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'P&L: '+fmt(c.raw)}}},
+        scales:{x:{ticks:{color:TC,maxTicksLimit:10},grid:{color:GC}},
+                y:{ticks:{color:TC,callback:v=>'$'+v.toFixed(0)},grid:{color:GC}}}}
     });
   }
 
-  if(data.symbols&&data.symbols.length>0){
-    const syms=data.symbols, labs=syms.map(s=>s.symbol);
-    const ctx2=$('anTradesChart');
-    if(ctx2){
-      const ex=Chart.getChart(ctx2); if(ex)ex.destroy();
-      anTradesInst=new Chart(ctx2,{type:'bar',
-        data:{labels:labs,datasets:[
-          {label:'Wins',data:syms.map(s=>s.wins),backgroundColor:'#23863699'},
-          {label:'Losses',data:syms.map(s=>s.losses),backgroundColor:'#da363399'},
-        ]},
-        options:{responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{labels:{color:'#8b949e'}}},
-          scales:{x:{stacked:true,ticks:{color:'#8b949e'},grid:{color:'#21262d'}},
-                  y:{stacked:true,ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}}
-      });
-    }
-    const ctx3=$('anPnlChart');
-    if(ctx3){
-      const ex=Chart.getChart(ctx3); if(ex)ex.destroy();
-      const pnlVals=syms.map(s=>s.total_pnl);
-      anPnlInst=new Chart(ctx3,{type:'bar',
-        data:{labels:labs,datasets:[{label:'Total P&L',data:pnlVals,
-          backgroundColor:pnlVals.map(v=>v>=0?'#23863699':'#da363399'),
-          borderColor:pnlVals.map(v=>v>=0?'#3fb950':'#f85149'),borderWidth:1}]},
-        options:{responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{x:{ticks:{color:'#8b949e'},grid:{color:'#21262d'}},
-                  y:{ticks:{color:'#8b949e',callback:v=>'$'+v.toFixed(0)},grid:{color:'#21262d'}}}}
-      });
-    }
-    const ctx4=$('anWinChart');
-    if(ctx4){
-      const ex=Chart.getChart(ctx4); if(ex)ex.destroy();
-      const wrVals=syms.map(s=>s.win_rate);
-      anWinInst=new Chart(ctx4,{type:'bar',
-        data:{labels:labs,datasets:[{label:'Win Rate %',data:wrVals,
-          backgroundColor:wrVals.map(v=>v>=60?'#23863699':v>=50?'#9e6a0399':'#da363399'),borderWidth:1}]},
-        options:{responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{x:{ticks:{color:'#8b949e'},grid:{color:'#21262d'}},
-                  y:{min:0,max:100,ticks:{color:'#8b949e',callback:v=>v+'%'},grid:{color:'#21262d'}}}}
-      });
-    }
+  // ── Drawdown ──
+  const ctx_dd = _dChart('anDrawdownChart');
+  if(ctx_dd && dd.length) {
+    anDrawdownInst = new Chart(ctx_dd, {type:'line',
+      data:{labels:dd.map(p=>p.date), datasets:[{
+        label:'Drawdown', data:dd.map(p=>p.drawdown),
+        borderColor:'#f85149', backgroundColor:'#f8514918', fill:true,
+        tension:0.3, pointRadius:0, borderWidth:1.5,
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TC,maxTicksLimit:10},grid:{color:GC}},
+                y:{ticks:{color:TC,callback:v=>'$'+v.toFixed(0)},grid:{color:GC}}}}
+    });
+  }
+
+  if(!syms.length) return;
+  const labs = syms.map(s => s.symbol);
+
+  // ── Trades Stacked Bar ──
+  const ctx2 = _dChart('anTradesChart');
+  if(ctx2) {
+    anTradesInst = new Chart(ctx2, {type:'bar',
+      data:{labels:labs, datasets:[
+        {label:'Wins',   data:syms.map(s=>s.wins),   backgroundColor:'#23863699'},
+        {label:'Losses', data:syms.map(s=>s.losses), backgroundColor:'#da363399'},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:TC}}},
+        scales:{x:{stacked:true,ticks:{color:TC},grid:{color:GC}},
+                y:{stacked:true,ticks:{color:TC},grid:{color:GC}}}}
+    });
+  }
+
+  // ── P&L Bar ──
+  const ctx3 = _dChart('anPnlChart');
+  if(ctx3) {
+    const pnlVals = syms.map(s=>s.total_pnl);
+    anPnlInst = new Chart(ctx3, {type:'bar',
+      data:{labels:labs, datasets:[{label:'Total P&L',data:pnlVals,
+        backgroundColor:pnlVals.map(v=>v>=0?'#23863699':'#da363399'),
+        borderColor:pnlVals.map(v=>v>=0?'#3fb950':'#f85149'),borderWidth:1}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TC},grid:{color:GC}},
+                y:{ticks:{color:TC,callback:v=>'$'+v.toFixed(0)},grid:{color:GC}}}}
+    });
+  }
+
+  // ── Win Rate Bar ──
+  const ctx4 = _dChart('anWinChart');
+  if(ctx4) {
+    const wrVals = syms.map(s=>s.win_rate);
+    anWinInst = new Chart(ctx4, {type:'bar',
+      data:{labels:labs, datasets:[{label:'Win Rate %',data:wrVals,
+        backgroundColor:wrVals.map(v=>v>=60?'#23863699':v>=50?'#9e6a0399':'#da363399'),
+        borderWidth:1}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TC},grid:{color:GC}},
+                y:{min:0,max:100,ticks:{color:TC,callback:v=>v+'%'},grid:{color:GC}}}}
+    });
+  }
+
+  // ── Monthly P&L ──
+  const mo = data.monthly_pnl || [];
+  const ctx5 = _dChart('anMonthlyChart');
+  if(ctx5 && mo.length) {
+    const moVals = mo.map(m=>m.pnl);
+    anMonthlyInst = new Chart(ctx5, {type:'bar',
+      data:{labels:mo.map(m=>m.month), datasets:[{label:'Monthly P&L',data:moVals,
+        backgroundColor:moVals.map(v=>v>=0?'#23863699':'#da363399'),
+        borderColor:moVals.map(v=>v>=0?'#3fb950':'#f85149'),borderWidth:1}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'P&L: '+fmt(c.raw)}}},
+        scales:{x:{ticks:{color:TC,maxRotation:45},grid:{color:GC}},
+                y:{ticks:{color:TC,callback:v=>'$'+v.toFixed(0)},grid:{color:GC}}}}
+    });
+  }
+
+  // ── Allocation Pie ──
+  const alloc = data.allocation_pie || [];
+  const ctxPie = _dChart('anPieChart');
+  if(ctxPie && alloc.length) {
+    anPieInst = new Chart(ctxPie, {type:'doughnut',
+      data:{
+        labels:alloc.map(a=>a.symbol),
+        datasets:[{
+          data:alloc.map(a=>a.pct),
+          backgroundColor:COLORS.slice(0,alloc.length).map(c=>c+'cc'),
+          borderColor:'#0d1117', borderWidth:2,
+        }]
+      },
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{position:'right',labels:{color:TC,font:{size:11},padding:8}},
+          tooltip:{callbacks:{
+            label:c=>{
+              const a=alloc[c.dataIndex];
+              return [`${c.label}: ${c.raw}% of capital`,
+                      `Invested: ${fmt(a.invested)}`,
+                      `P&L: ${fmt(a.pnl)}  ROI: ${a.roi_pct}%`];
+            }
+          }}
+        }
+      }
+    });
+  }
+
+  // ── ROI% Bar ──
+  const ctxRoi = _dChart('anRoiChart');
+  if(ctxRoi) {
+    const roiVals = syms.map(s=>s.roi_pct||0);
+    anRoiInst = new Chart(ctxRoi, {type:'bar',
+      data:{labels:labs, datasets:[{label:'ROI %',data:roiVals,
+        backgroundColor:roiVals.map(v=>v>=0?'#23863699':'#da363399'),
+        borderColor:roiVals.map(v=>v>=0?'#3fb950':'#f85149'),borderWidth:1}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:TC},grid:{color:GC}},
+                y:{ticks:{color:TC,callback:v=>(v>=0?'+':'')+v+'%'},grid:{color:GC}}}}
+    });
   }
 }
 
