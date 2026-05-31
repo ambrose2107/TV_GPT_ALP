@@ -705,7 +705,14 @@ def api_pnl_calendar():
     if e: return e
     try:
         from core.database import get_closed_positions
-        all_p  = get_closed_positions(1000)
+        date_from = request.args.get("date_from", "")
+        date_to   = request.args.get("date_to",   "")
+        all_p  = get_closed_positions(5000)
+        # Apply date filter if provided
+        if date_from or date_to:
+            df = date_from or "2000-01-01"
+            dt = date_to   or "2099-12-31"
+            all_p = [p for p in all_p if df <= (p.get("closed_at","") or "")[:10] <= dt]
         by_day = {}
         for p in all_p:
             d = (p.get("closed_at","") or "")[:10]
@@ -721,6 +728,8 @@ def api_pnl_calendar():
         cum = 0
         for d in cal:
             cum += d["pnl"]; d["cumulative"] = round(cum,2)
-        return jsonify({"calendar": cal, "total_days": len(cal), "cumulative_pnl": round(cum,2)})
+        return jsonify({"calendar": cal, "total_days": len(cal),
+                        "cumulative_pnl": round(cum,2),
+                        "date_from": date_from, "date_to": date_to})
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
