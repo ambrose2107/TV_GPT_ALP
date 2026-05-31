@@ -35,20 +35,51 @@ def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
     Pull ALL filled orders from Alpaca, optionally filtered by date range.
     date_from / date_to: ISO date strings 'YYYY-MM-DD'
     Returns list of normalised trade dicts.
+
+    FIX: Alpaca defaults to ~7 days when no 'after' param is sent.
+    We always send 'after' (default: account epoch 2015-01-01) so we get
+    the full history. We also paginate via 'after_id' to bypass the 500 limit.
     """
     try:
         base = Config.ALPACA_BASE_URL
         url  = f"{base}/v2/orders"
-        params = {"status": "all", "limit": 500, "direction": "asc"}
-        if date_from:
-            params["after"]  = f"{date_from}T00:00:00Z"
-        if date_to:
-            params["until"]  = f"{date_to}T23:59:59Z"
-        r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=15)
-        r.raise_for_status()
-        orders = r.json()
+
+        # Default to full history if no date range given
+        after_ts = f"{date_from}T00:00:00Z" if date_from else "2015-01-01T00:00:00Z"
+        until_ts = f"{date_to}T23:59:59Z"   if date_to   else None
+
+        all_orders = []
+        page_token = None
+
+        while True:
+            params = {
+                "status":    "all",
+                "limit":     500,
+                "direction": "asc",
+                "after":     after_ts,
+            }
+            if until_ts:
+                params["until"] = until_ts
+            if page_token:
+                params["after"] = page_token  # paginate from last order time
+
+            r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=15)
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            all_orders.extend(batch)
+
+            # If we got a full page, paginate using the last order's filled_at
+            if len(batch) == 500:
+                last_ts = batch[-1].get("filled_at") or batch[-1].get("submitted_at") or ""
+                if last_ts and last_ts != page_token:
+                    page_token = last_ts
+                    continue
+            break
+
         trades = []
-        for o in orders:
+        for o in all_orders:
             if o.get("status") not in ("filled", "partially_filled"):
                 continue
             sym   = o.get("symbol", "")
@@ -60,7 +91,7 @@ def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
                 continue
             trades.append({
                 "symbol":    sym,
-                "side":      side,   # "buy" or "sell"
+                "side":      side,
                 "qty":       qty,
                 "price":     price,
                 "timestamp": ts[:19].replace("T", " "),
@@ -68,7 +99,8 @@ def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
                 "alpaca_id": o.get("id", ""),
                 "source":    "alpaca",
             })
-        logger.info(f"Fetched {len(trades)} filled orders from Alpaca")
+
+        logger.info(f"Fetched {len(trades)} filled orders from Alpaca (scanned {len(all_orders)} total)")
         return trades
     except Exception as e:
         logger.warning(f"Alpaca orders fetch failed: {e}")
@@ -314,3 +346,30 @@ def analytics_symbol_detail(symbol):
         db_rows  = get_closed_positions(limit=2000)
         sym_rows = [r for r in db_rows if r.get("symbol","").upper() == symbol.upper()]
     return jsonify({"symbol": symbol.upper(), "trades": sym_rows})
+
+
+@analytics_bp.route("/api/analytics/debug", methods=["GET"])
+def analytics_debug():
+    """Debug endpoint — shows raw Alpaca order count + sample. Remove in production."""
+    e = _auth()
+    if e: return e
+    try:
+        base = Config.ALPACA_BASE_URL
+        headers = _alpaca_headers()
+        # Quick account check
+        acct = requests.get(f"{base}/v2/account", headers=headers, timeout=10)
+        # Raw orders (last 30 days)
+        orders = requests.get(f"{base}/v2/orders",
+                              headers=headers,
+                              params={"status": "all", "limit": 10, "direction": "desc"},
+                              timeout=10)
+        return jsonify({
+            "alpaca_base_url": base,
+            "has_api_key":     bool(Config.ALPACA_API_KEY),
+            "account_status":  acct.status_code,
+            "account_ok":      acct.ok,
+            "orders_status":   orders.status_code,
+            "orders_sample":   orders.json()[:3] if orders.ok else orders.text[:300],
+        })
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500

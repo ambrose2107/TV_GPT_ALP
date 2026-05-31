@@ -1965,9 +1965,32 @@ function loadAnalytics8(force=false) {
   const body = {};
   if(from) body.date_from = from;
   if(to)   body.date_to   = to;
+
+  // Show loading state
+  const loadBtn = document.querySelector('#pane-ana8 .btn-b');
+  if(loadBtn) { loadBtn.textContent='⏳ Loading…'; loadBtn.disabled=true; }
+  const badge = $('an-source-badge');
+  if(badge) badge.textContent = '⏳ Fetching from Alpaca…';
+  const tbody = $('an-tbody');
+  if(tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e;padding:20px">
+    ⏳ Loading trade data from Alpaca…</td></tr>`;
+
   apiPost('/api/analytics/summary', body)
-    .then(data => { anLoaded=true; renderAnalytics9(data); })
-    .catch(e => console.error('Analytics error:', e));
+    .then(data => {
+      anLoaded = true;
+      renderAnalytics9(data);
+    })
+    .catch(e => {
+      console.error('Analytics error:', e);
+      if(badge) badge.textContent = `❌ Error: ${e.message}`;
+      if(tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#f85149;padding:20px">
+        ❌ Failed to load analytics: ${e.message}<br>
+        <small style="color:#8b949e">Check your Alpaca API keys in Settings, or open <a href="/api/analytics/debug" target="_blank">/api/analytics/debug</a> to diagnose.</small>
+        </td></tr>`;
+    })
+    .finally(() => {
+      if(loadBtn) { loadBtn.textContent='🔄 Load'; loadBtn.disabled=false; }
+    });
 }
 
 function _dChart(id) {
@@ -1978,6 +2001,27 @@ function _dChart(id) {
 function renderAnalytics9(data) {
   const t = data.totals || {};
   const pcc = v => parseFloat(v||0) >= 0 ? 'g' : 'r';
+
+  // Update source badge
+  const src = $('an-source-badge');
+  if(src) {
+    const srcLabel = data.source === 'alpaca' ? '🟢 Alpaca (live)' : data.source === 'db' ? '🟡 Local DB' : data.source || 'unknown';
+    src.textContent = `Source: ${srcLabel} | ${data.raw_count || 0} closed trades`;
+    src.style.color = data.raw_count > 0 ? '#3fb950' : '#f85149';
+  }
+
+  // Empty state — show clear message instead of all dashes
+  if (!data.raw_count) {
+    const tbody = $('an-tbody');
+    if(tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e;padding:30px">
+      📭 No closed trades found.<br>
+      <small>Make sure your Alpaca account has filled orders, then click <strong>All</strong> or set a wider date range and click <strong>🔄 Load</strong>.<br>
+      Diagnose: <a href="/api/analytics/debug" target="_blank">/api/analytics/debug</a></small></td></tr>`;
+    ['an-total-trades','an-win-rate','an-total-pnl','an-pf','an-avg-trade',
+     'an-best','an-worst','an-dd','an-sharpe','an-invested','an-roi','an-exp']
+      .forEach(id => { const el=$(id); if(el) el.textContent='—'; });
+    return;
+  }
 
   // KPI cards
   $('an-total-trades').textContent = t.total_trades ?? '—';
@@ -2003,9 +2047,6 @@ function renderAnalytics9(data) {
   const expEl = $('an-exp');
   expEl.textContent = t.expectancy != null ? fmt(t.expectancy) : '—';
   expEl.className   = 'val ' + pcc(t.expectancy);
-
-  const src = $('an-source-badge');
-  if(src) src.textContent = `Source: ${data.source || 'db'} | ${data.raw_count || 0} closed trades`;
 
   // Symbol table
   const tbody = $('an-tbody');
