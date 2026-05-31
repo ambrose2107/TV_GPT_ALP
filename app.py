@@ -18,7 +18,8 @@ def create_app():
                 template_folder="dashboard/templates",
                 static_folder="dashboard/static")
     app.secret_key = os.environ.get("APP_SECRET_KEY", "change-me-in-production")
-    app.config["SESSION_TYPE"] = "filesystem"
+    # NOTE: Do NOT set SESSION_TYPE="filesystem" without flask-session installed.
+    # Flask's default cookie-based sessions work fine and don't need flask-session.
     init_db()
     app.register_blueprint(webhook_bp)
     app.register_blueprint(dashboard_bp)

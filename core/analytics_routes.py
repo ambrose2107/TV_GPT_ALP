@@ -302,14 +302,15 @@ def analytics_summary():
     source    = body.get("source", "auto")  # "alpaca", "db", "auto"
 
     rows = []
+    alpaca_available = bool(Config.ALPACA_API_KEY and Config.ALPACA_SECRET_KEY)
 
-    # Try Alpaca first
-    if source in ("alpaca", "auto"):
+    # Try Alpaca if keys are configured
+    if source in ("alpaca", "auto") and alpaca_available:
         alpaca_trades = _fetch_alpaca_orders(date_from, date_to)
         if alpaca_trades:
             rows = _build_round_trips(alpaca_trades)
 
-    # Fall back to local DB
+    # Always fall back to local DB (primary source when Alpaca not configured or returns nothing)
     if not rows:
         db_rows = get_closed_positions(limit=2000)
         if date_from or date_to:

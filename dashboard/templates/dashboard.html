@@ -476,6 +476,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <button class="btn btn-n btn-s" onclick="anSetRange('6m')">6M</button>
         <button class="btn btn-n btn-s" onclick="anSetRange('all')">All</button>
         <span id="an-source-badge" style="font-size:10px;color:#8b949e"></span>
+        <span id="an-spinner" style="display:none;font-size:11px;color:#58a6ff">⏳ Loading…</span>
       </div>
     </div>
   </div>
@@ -1595,12 +1596,12 @@ function renderInsider(d) {
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 async function apiFetch(url) {
-  const r = await fetch(url);
+  const r = await fetch(url, {credentials: 'same-origin'});
   if(!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 async function apiPost(url, body) {
-  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r = await fetch(url, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if(!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -1969,11 +1970,13 @@ function loadAnalytics8(force=false) {
   // Show loading state
   const loadBtn = document.querySelector('#pane-ana8 .btn-b');
   if(loadBtn) { loadBtn.textContent='⏳ Loading…'; loadBtn.disabled=true; }
+  const spinner = $('an-spinner');
+  if(spinner) spinner.style.display = 'inline';
   const badge = $('an-source-badge');
-  if(badge) badge.textContent = '⏳ Fetching from Alpaca…';
+  if(badge) { badge.textContent = ''; }
   const tbody = $('an-tbody');
   if(tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e;padding:20px">
-    ⏳ Loading trade data from Alpaca…</td></tr>`;
+    ⏳ Loading trade data…</td></tr>`;
 
   apiPost('/api/analytics/summary', body)
     .then(data => {
@@ -1990,6 +1993,7 @@ function loadAnalytics8(force=false) {
     })
     .finally(() => {
       if(loadBtn) { loadBtn.textContent='🔄 Load'; loadBtn.disabled=false; }
+      if(spinner) spinner.style.display = 'none';
     });
 }
 
