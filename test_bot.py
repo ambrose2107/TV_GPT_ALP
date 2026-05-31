@@ -400,6 +400,39 @@ class TestAnalytics(unittest.TestCase):
         trips = self._build(trades)
         self.assertEqual(len(trips), 0)  # No sell = no closed trade
 
+    def test_orphan_sell_still_creates_record(self):
+        """Sell with no matching buy (position opened outside date window) should still appear."""
+        trades = [
+            {"symbol": "COHR", "side": "sell", "qty": 20, "price": 358.417,
+             "timestamp": "2026-05-29 19:50:21", "date": "2026-05-29",
+             "source": "alpaca", "position_intent": "sell_to_close"},
+        ]
+        trips = self._build(trades)
+        self.assertEqual(len(trips), 1)
+        self.assertEqual(trips[0]["symbol"], "COHR")
+        self.assertEqual(trips[0]["pnl"], 0.0)       # P&L unknown = 0
+        self.assertTrue(trips[0].get("orphan"))       # flagged as orphan
+
+    def test_mixed_orphan_and_matched(self):
+        """Mix of orphan sells and matched round trips."""
+        trades = [
+            # Matched pair
+            {"symbol": "AAPL", "side": "buy",  "qty": 10, "price": 150.0,
+             "timestamp": "2024-01-02 10:00:00", "date": "2024-01-02", "source": "alpaca"},
+            {"symbol": "AAPL", "side": "sell", "qty": 10, "price": 160.0,
+             "timestamp": "2024-01-03 10:00:00", "date": "2024-01-03", "source": "alpaca"},
+            # Orphan sell
+            {"symbol": "TSLA", "side": "sell", "qty": 5, "price": 200.0,
+             "timestamp": "2024-01-04 10:00:00", "date": "2024-01-04", "source": "alpaca"},
+        ]
+        trips = self._build(trades)
+        self.assertEqual(len(trips), 2)
+        aapl = next(t for t in trips if t["symbol"] == "AAPL")
+        tsla = next(t for t in trips if t["symbol"] == "TSLA")
+        self.assertAlmostEqual(aapl["pnl"], 100.0)
+        self.assertFalse(aapl.get("orphan"))
+        self.assertTrue(tsla.get("orphan"))
+
     def test_partial_fill_matching(self):
         trades = [
             {"symbol": "MSFT", "side": "buy",  "qty": 10, "price": 300.0,

@@ -33,23 +33,18 @@ def _alpaca_headers():
 def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
     """
     Pull ALL filled orders from Alpaca, optionally filtered by date range.
-    date_from / date_to: ISO date strings 'YYYY-MM-DD'
-    Returns list of normalised trade dicts.
-
-    FIX: Alpaca defaults to ~7 days when no 'after' param is sent.
-    We always send 'after' (default: account epoch 2015-01-01) so we get
-    the full history. We also paginate via 'after_id' to bypass the 500 limit.
+    Uses Alpaca's next_page_token for proper pagination (bypasses 500/page limit).
+    Default after=2015-01-01 ensures full account history is returned.
     """
     try:
         base = Config.ALPACA_BASE_URL
         url  = f"{base}/v2/orders"
 
-        # Default to full history if no date range given
         after_ts = f"{date_from}T00:00:00Z" if date_from else "2015-01-01T00:00:00Z"
         until_ts = f"{date_to}T23:59:59Z"   if date_to   else None
 
-        all_orders = []
-        page_token = None
+        all_orders  = []
+        page_token  = None
 
         while True:
             params = {
@@ -61,7 +56,7 @@ def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
             if until_ts:
                 params["until"] = until_ts
             if page_token:
-                params["after"] = page_token  # paginate from last order time
+                params["page_token"] = page_token
 
             r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=15)
             r.raise_for_status()
@@ -70,13 +65,10 @@ def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
                 break
             all_orders.extend(batch)
 
-            # If we got a full page, paginate using the last order's filled_at
-            if len(batch) == 500:
-                last_ts = batch[-1].get("filled_at") or batch[-1].get("submitted_at") or ""
-                if last_ts and last_ts != page_token:
-                    page_token = last_ts
-                    continue
-            break
+            # Alpaca returns next_page_token in headers when more pages exist
+            page_token = r.headers.get("X-Next-Page-Token") or r.headers.get("next_page_token")
+            if not page_token or len(batch) < 500:
+                break
 
         trades = []
         for o in all_orders:
@@ -90,14 +82,15 @@ def _fetch_alpaca_orders(date_from: str = None, date_to: str = None) -> list:
             if not sym or qty == 0:
                 continue
             trades.append({
-                "symbol":    sym,
-                "side":      side,
-                "qty":       qty,
-                "price":     price,
-                "timestamp": ts[:19].replace("T", " "),
-                "date":      ts[:10],
-                "alpaca_id": o.get("id", ""),
-                "source":    "alpaca",
+                "symbol":           sym,
+                "side":             side,
+                "qty":              qty,
+                "price":            price,
+                "timestamp":        ts[:19].replace("T", " "),
+                "date":             ts[:10],
+                "alpaca_id":        o.get("id", ""),
+                "position_intent":  o.get("position_intent", ""),
+                "source":           "alpaca",
             })
 
         logger.info(f"Fetched {len(trades)} filled orders from Alpaca (scanned {len(all_orders)} total)")
@@ -110,27 +103,39 @@ def _build_round_trips(trades: list) -> list:
     """
     Match buy→sell pairs per symbol into closed round-trip P&L records.
     Uses FIFO matching.
+
+    Orphan sells (sell with no matching buy in this dataset — common when the
+    opening buy predates the query window) are included as best-effort records
+    using the sell price as both entry and exit so they still appear in the
+    analytics table (P&L shown as 0 since entry is unknown).
+
+    This ensures a sell-only order history still renders charts correctly.
     """
-    # Group by symbol, separate buys and sells
     buys  = defaultdict(list)
     sells = defaultdict(list)
     for t in trades:
+        sym = t["symbol"]
         if t["side"] == "buy":
-            buys[t["symbol"]].append(t)
+            buys[sym].append(dict(t))   # copy so we can mutate qty
         else:
-            sells[t["symbol"]].append(t)
+            sells[sym].append(t)
 
     round_trips = []
-    for sym in set(list(buys.keys()) + list(sells.keys())):
-        bq = list(buys[sym])   # FIFO queue
+    all_syms = set(list(buys.keys()) + list(sells.keys()))
+
+    for sym in all_syms:
+        bq = list(buys[sym])   # FIFO queue (mutable copies)
         sq = list(sells[sym])
+
         for sell in sq:
             remaining_sell_qty = sell["qty"]
+
+            # Match against available buys (FIFO)
             while remaining_sell_qty > 0 and bq:
-                buy = bq[0]
+                buy         = bq[0]
                 matched_qty = min(buy["qty"], remaining_sell_qty)
-                pnl     = (sell["price"] - buy["price"]) * matched_qty
-                pnl_pct = ((sell["price"] - buy["price"]) / buy["price"] * 100) if buy["price"] > 0 else 0
+                pnl         = (sell["price"] - buy["price"]) * matched_qty
+                pnl_pct     = ((sell["price"] - buy["price"]) / buy["price"] * 100) if buy["price"] > 0 else 0
                 round_trips.append({
                     "symbol":      sym,
                     "side":        "long",
@@ -144,10 +149,29 @@ def _build_round_trips(trades: list) -> list:
                     "closed_at":   sell["timestamp"],
                     "source":      sell.get("source", "alpaca"),
                 })
-                buy["qty"] -= matched_qty
+                buy["qty"]         -= matched_qty
                 remaining_sell_qty -= matched_qty
                 if buy["qty"] <= 0:
                     bq.pop(0)
+
+            # Orphan sell — no matching buy found (position opened outside date window)
+            # Record with entry_price = exit_price so pnl = 0 but trade still shows up
+            if remaining_sell_qty > 0:
+                round_trips.append({
+                    "symbol":      sym,
+                    "side":        "long",
+                    "qty":         remaining_sell_qty,
+                    "entry_price": sell["price"],   # unknown — use sell price
+                    "exit_price":  sell["price"],
+                    "pnl":         0.0,             # unknown
+                    "pnl_pct":     0.0,
+                    "entry_date":  sell["date"],    # unknown
+                    "exit_date":   sell["date"],
+                    "closed_at":   sell["timestamp"],
+                    "source":      sell.get("source", "alpaca"),
+                    "orphan":      True,            # flag so UI can note it
+                })
+
     return sorted(round_trips, key=lambda x: x["closed_at"])
 
 def _compute_analytics(rows: list) -> dict:
@@ -373,4 +397,53 @@ def analytics_debug():
             "orders_sample":   orders.json()[:3] if orders.ok else orders.text[:300],
         })
     except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+
+@analytics_bp.route("/api/calc/price/<symbol>", methods=["GET"])
+def calc_price(symbol):
+    """Return latest trade price for a symbol from Alpaca."""
+    e = _auth()
+    if e: return e
+    symbol = symbol.upper().strip()
+    try:
+        base = Config.ALPACA_BASE_URL
+        # Try latest trade first
+        r = requests.get(
+            f"https://data.alpaca.markets/v2/stocks/{symbol}/trades/latest",
+            headers=_alpaca_headers(),
+            timeout=8,
+        )
+        if r.ok:
+            price = r.json().get("trade", {}).get("p")
+            if price:
+                return jsonify({"symbol": symbol, "price": round(float(price), 4)})
+
+        # Fallback: latest bar
+        r2 = requests.get(
+            f"https://data.alpaca.markets/v2/stocks/{symbol}/bars/latest",
+            headers=_alpaca_headers(),
+            timeout=8,
+        )
+        if r2.ok:
+            price = r2.json().get("bar", {}).get("c")
+            if price:
+                return jsonify({"symbol": symbol, "price": round(float(price), 4)})
+
+        # Fallback: last filled order for that symbol
+        orders = requests.get(
+            f"{base}/v2/orders",
+            headers=_alpaca_headers(),
+            params={"status": "filled", "symbols": symbol, "limit": 1, "direction": "desc"},
+            timeout=8,
+        )
+        if orders.ok and orders.json():
+            o = orders.json()[0]
+            price = float(o.get("filled_avg_price") or 0)
+            if price:
+                return jsonify({"symbol": symbol, "price": round(price, 4), "source": "last_order"})
+
+        return jsonify({"error": f"No price found for {symbol}"}), 404
+    except Exception as ex:
+        logger.warning(f"calc_price error for {symbol}: {ex}")
         return jsonify({"error": str(ex)}), 500

@@ -189,6 +189,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <div class="tab"     onclick="switchTab(7,'ana8')">📊 Analytics</div>
   <div class="tab"     onclick="switchTab(8,'mf')">🐟 MirrorFish AI</div>
   <div class="tab"     onclick="switchTab(9,'set')">⚙️ Settings</div>
+  <div class="tab"     onclick="switchTab(10,'calc')">🧮 Inv. Calculator</div>
 </div>
 
 <!-- DATA SOURCE BANNER -->
@@ -673,6 +674,56 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- INVESTMENT CALCULATOR PANE                                            -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="pane" id="pane-calc">
+  <div class="sec" style="margin-bottom:14px">
+    <div class="sec-hdr">
+      <h2>🧮 Investment Calculator</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:#8b949e">Account Balance ($):</label>
+        <input type="number" id="calc-budget" placeholder="e.g. 25000" min="0" step="0.01"
+          style="width:140px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:5px 9px;font-size:12px"
+          oninput="calcRecalc()">
+        <button class="btn btn-g btn-s" onclick="calcAddRow()">+ Add Row</button>
+        <button class="btn btn-n btn-s" onclick="calcClearAll()">🗑 Clear All</button>
+        <button class="btn btn-b btn-s" onclick="calcFetchPrices()">📡 Fetch Prices</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px" id="calc-table">
+        <thead>
+          <tr style="color:#8b949e;border-bottom:1px solid #30363d">
+            <th style="padding:8px 10px;text-align:left;min-width:110px">Stock</th>
+            <th style="padding:8px 10px;text-align:right;min-width:110px">Current Price ($)</th>
+            <th style="padding:8px 10px;text-align:right;min-width:100px">Shares to Buy</th>
+            <th style="padding:8px 10px;text-align:right;min-width:120px">Total Cost ($)</th>
+            <th style="padding:8px 10px;text-align:right;min-width:130px">Remaining ($)</th>
+            <th style="padding:8px 6px;text-align:center;width:36px"></th>
+          </tr>
+        </thead>
+        <tbody id="calc-tbody"></tbody>
+        <tfoot>
+          <tr style="border-top:2px solid #30363d;font-weight:700;color:#e6edf3">
+            <td colspan="3" style="padding:10px 10px;text-align:right;color:#8b949e">Total Invested:</td>
+            <td id="calc-total-cost" style="padding:10px 10px;text-align:right;color:#3fb950">$0.00</td>
+            <td id="calc-final-remaining" style="padding:10px 10px;text-align:right"></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p id="calc-hint" style="font-size:11px;color:#8b949e;margin-top:8px;padding:0 4px">
+      Enter your account balance above, add stock rows, set a price and number of shares — the calculator will track your remaining cash in real time.
+      Click <strong>📡 Fetch Prices</strong> to auto-fill current prices from Alpaca for any ticker you enter.
+    </p>
+  </div>
+</div>
+
 <!-- CLOSE MODAL -->
 <div class="modal" id="close-modal">
   <div class="modal-box">
@@ -738,6 +789,7 @@ function switchTab(idx, name) {
   if(name==='set')  loadSessionTimes();
   if(name==='ana8') loadAnalytics8();
   if(name==='mf')   loadMirrorFish();
+  if(name==='calc') calcOnOpen();
 }
 function anaSub(name, idx) {
   ['signals','charts','ema','compare'].forEach(n=>{
@@ -2331,6 +2383,133 @@ function mfQuick(msg) {
       const els=hist.querySelectorAll('[id^="mf-thinking-"]');
       if(els.length) els[els.length-1].textContent='🐟 Error: '+e.message;
     });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INVESTMENT CALCULATOR
+// ══════════════════════════════════════════════════════════════════════════════
+let calcRowId = 0;
+
+function calcAddRow(sym='', price='', shares='') {
+  const id  = ++calcRowId;
+  const tbody = $('calc-tbody');
+  const tr = document.createElement('tr');
+  tr.id = `calc-row-${id}`;
+  tr.style.cssText = 'border-bottom:1px solid #21262d';
+  tr.innerHTML = `
+    <td style="padding:6px 10px">
+      <input type="text" id="calc-sym-${id}" value="${sym}"
+        placeholder="e.g. AAPL"
+        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-transform:uppercase"
+        oninput="this.value=this.value.toUpperCase(); calcRecalc()">
+    </td>
+    <td style="padding:6px 10px">
+      <input type="number" id="calc-price-${id}" value="${price}"
+        placeholder="0.00" min="0" step="0.01"
+        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-align:right"
+        oninput="calcRecalc()">
+    </td>
+    <td style="padding:6px 10px">
+      <input type="number" id="calc-shares-${id}" value="${shares}"
+        placeholder="0" min="0" step="1"
+        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-align:right"
+        oninput="calcRecalc()">
+    </td>
+    <td id="calc-cost-${id}" style="padding:6px 10px;text-align:right;color:#e6edf3;font-weight:600">$0.00</td>
+    <td id="calc-rem-${id}"  style="padding:6px 10px;text-align:right;font-weight:600;color:#8b949e">—</td>
+    <td style="padding:6px 6px;text-align:center">
+      <button onclick="calcRemoveRow(${id})" title="Remove row"
+        style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:14px;line-height:1;padding:2px 5px"
+        onmouseover="this.style.color='#f85149'" onmouseout="this.style.color='#8b949e'">✕</button>
+    </td>`;
+  tbody.appendChild(tr);
+  calcRecalc();
+}
+
+function calcRemoveRow(id) {
+  const row = $(`calc-row-${id}`);
+  if(row) row.remove();
+  calcRecalc();
+}
+
+function calcClearAll() {
+  $('calc-tbody').innerHTML = '';
+  calcRowId = 0;
+  calcRecalc();
+}
+
+function calcRecalc() {
+  const budget  = parseFloat($('calc-budget')?.value) || 0;
+  const rows    = [...$('calc-tbody').querySelectorAll('tr')];
+  let   running = budget;
+  let   totalInvested = 0;
+
+  rows.forEach(tr => {
+    const id     = tr.id.replace('calc-row-', '');
+    const price  = parseFloat($(`calc-price-${id}`)?.value)  || 0;
+    const shares = parseFloat($(`calc-shares-${id}`)?.value) || 0;
+    const cost   = price * shares;
+    totalInvested += cost;
+    running -= cost;
+
+    const costEl = $(`calc-cost-${id}`);
+    const remEl  = $(`calc-rem-${id}`);
+    if(costEl) costEl.textContent = `$${cost.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    if(remEl) {
+      if(!budget) {
+        remEl.textContent = '—';
+        remEl.style.color = '#8b949e';
+      } else {
+        remEl.textContent = `$${running.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        remEl.style.color = running < 0 ? '#f85149' : running < budget * 0.1 ? '#d29922' : '#3fb950';
+      }
+    }
+  });
+
+  const totalEl = $('calc-total-cost');
+  const finalEl = $('calc-final-remaining');
+  if(totalEl) totalEl.textContent = `$${totalInvested.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+  if(finalEl) {
+    if(!budget) { finalEl.textContent=''; return; }
+    const rem = budget - totalInvested;
+    finalEl.textContent = `$${rem.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} remaining`;
+    finalEl.style.color = rem < 0 ? '#f85149' : rem < budget * 0.1 ? '#d29922' : '#3fb950';
+  }
+}
+
+let calcOpened = false;
+function calcOnOpen() {
+  if(calcOpened) return;
+  calcOpened = true;
+  // Seed with 3 blank rows to get started
+  calcAddRow(); calcAddRow(); calcAddRow();
+}
+
+  const rows = [...$('calc-tbody').querySelectorAll('tr')];
+  if(!rows.length) { alert('Add some stock rows first.'); return; }
+
+  const syms = rows.map(tr => {
+    const id = tr.id.replace('calc-row-','');
+    return { id, sym: ($(`calc-sym-${id}`)?.value||'').trim().toUpperCase() };
+  }).filter(r => r.sym);
+
+  if(!syms.length) { alert('Enter at least one ticker symbol.'); return; }
+
+  // Fetch latest bar price from Alpaca for each symbol
+  const fetching = syms.map(async ({id, sym}) => {
+    try {
+      const r = await apiFetch(`/api/calc/price/${sym}`);
+      if(r.price) {
+        const el = $(`calc-price-${id}`);
+        if(el) { el.value = r.price; el.style.borderColor='#3fb950'; }
+      }
+    } catch(e) {
+      const el = $(`calc-price-${id}`);
+      if(el) el.style.borderColor='#f85149';
+    }
+  });
+  await Promise.all(fetching);
+  calcRecalc();
 }
 
 </script>
