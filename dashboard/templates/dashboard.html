@@ -493,9 +493,6 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     </div>
   </div>
 
-  <!-- Warnings banner (orphan trades, open positions) -->
-  <div id="an-warnings"></div>
-
   <!-- KPI Cards -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
     <div class="card"><div class="lbl">Total Trades</div><div class="val" id="an-total-trades">—</div></div>
@@ -2093,80 +2090,61 @@ function renderAnalytics9(data) {
   const t = data.totals || {};
   const pcc = v => parseFloat(v||0) >= 0 ? 'g' : 'r';
 
-  // ── Source badge ──
+  // Update source badge
   const src = $('an-source-badge');
   if(src) {
-    const srcLabel = data.source === 'alpaca' ? '🟢 Alpaca' : data.source === 'db' ? '🟡 Local DB' : data.source || '?';
-    src.textContent = `${srcLabel} | ${data.raw_count || 0} trades`;
+    const srcLabel = data.source === 'alpaca' ? '🟢 Alpaca (live)' : data.source === 'db' ? '🟡 Local DB' : data.source || 'unknown';
+    src.textContent = `Source: ${srcLabel} | ${data.raw_count || 0} closed trades`;
     src.style.color = data.raw_count > 0 ? '#3fb950' : '#f85149';
   }
 
-  // ── Warning banner: orphan trades (sells with no matching buy in window) ──
-  const orphans   = (data.symbols || []).filter(s => s.orphan_count > 0);
-  const openBuys  = data.open_buys || [];   // buys with no matching sell
-  let warnHtml = '';
-  if(orphans.length) {
-    const names = orphans.map(s=>`<strong>${s.symbol}</strong> (${s.orphan_count})`).join(', ');
-    warnHtml += `<div style="background:#161b22;border:1px solid #d29922;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#d29922">
-      ⚠️ <strong>Incomplete P&L data</strong> — the following sells have <em>no matching buy</em> in the current date window (position was opened earlier): ${names}.<br>
-      <span style="color:#8b949e">Their P&L is shown as $0. To see accurate P&L, widen the date range or click <strong>All</strong>.</span>
-    </div>`;
-  }
-  if(openBuys.length) {
-    const names = [...new Set(openBuys.map(b=>b.symbol))].map(s=>`<strong>${s}</strong>`).join(', ');
-    warnHtml += `<div style="background:#161b22;border:1px solid #58a6ff;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#58a6ff">
-      📂 <strong>Open positions (not yet closed)</strong>: ${names} — these buys have no matching sell yet and are excluded from P&L calculations.
-    </div>`;
-  }
-  const warnEl = $('an-warnings');
-  if(warnEl) warnEl.innerHTML = warnHtml;
-
-  // ── Empty state ──
+  // Empty state — show clear message instead of all dashes
   if (!data.raw_count) {
     const tbody = $('an-tbody');
     if(tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e;padding:30px">
-      📭 No closed trades found in this date range.<br>
-      <small>Click <strong>All</strong> to load full history, or check <a href="/api/analytics/debug" target="_blank" style="color:#58a6ff">/api/analytics/debug</a>.</small></td></tr>`;
+      📭 No closed trades found.<br>
+      <small>Make sure your Alpaca account has filled orders, then click <strong>All</strong> or set a wider date range and click <strong>🔄 Load</strong>.<br>
+      Diagnose: <a href="/api/analytics/debug" target="_blank">/api/analytics/debug</a></small></td></tr>`;
     ['an-total-trades','an-win-rate','an-total-pnl','an-pf','an-avg-trade',
      'an-best','an-worst','an-dd','an-sharpe','an-invested','an-roi','an-exp']
       .forEach(id => { const el=$(id); if(el) el.textContent='—'; });
     return;
   }
 
-  // ── KPI cards ──
+  // KPI cards
   $('an-total-trades').textContent = t.total_trades ?? '—';
   const wrEl = $('an-win-rate');
-  wrEl.textContent = t.win_rate != null ? t.win_rate + '%' : '—';
-  wrEl.className   = 'val ' + (t.win_rate >= 50 ? 'g' : 'r');
+  wrEl.textContent  = t.win_rate != null ? t.win_rate + '%' : '—';
+  wrEl.className    = 'val ' + (t.win_rate >= 50 ? 'g' : 'r');
   const pnlEl = $('an-total-pnl');
   pnlEl.textContent = t.total_pnl != null ? fmt(t.total_pnl) : '—';
   pnlEl.className   = 'val ' + pcc(t.total_pnl);
-  $('an-pf').textContent    = t.profit_factor ?? '—';
+  $('an-pf').textContent   = t.profit_factor ?? '—';
   const avgEl = $('an-avg-trade');
   avgEl.textContent = t.avg_trade_pnl != null ? fmt(t.avg_trade_pnl) : '—';
   avgEl.className   = 'val ' + pcc(t.avg_trade_pnl);
-  $('an-best').textContent    = t.best_trade    != null ? fmt(t.best_trade)  : '—';
-  $('an-worst').textContent   = t.worst_trade   != null ? fmt(t.worst_trade) : '—';
-  $('an-dd').textContent      = t.max_drawdown  != null ? fmt(t.max_drawdown): '—';
+  $('an-best').textContent   = t.best_trade  != null ? fmt(t.best_trade)  : '—';
+  $('an-worst').textContent  = t.worst_trade != null ? fmt(t.worst_trade) : '—';
+  const ddEl = $('an-dd');
+  ddEl.textContent  = t.max_drawdown != null ? fmt(t.max_drawdown) : '—';
   $('an-sharpe').textContent  = t.sharpe_approx ?? '—';
   $('an-invested').textContent= t.total_investment != null ? fmt(t.total_investment) : '—';
   const roiEl = $('an-roi');
-  roiEl.textContent = t.overall_roi_pct != null ? (t.overall_roi_pct>=0?'+':'')+t.overall_roi_pct+'%' : '—';
+  roiEl.textContent = t.overall_roi_pct != null ? (t.overall_roi_pct >= 0 ? '+' : '') + t.overall_roi_pct + '%' : '—';
   roiEl.className   = 'val ' + pcc(t.overall_roi_pct);
   const expEl = $('an-exp');
   expEl.textContent = t.expectancy != null ? fmt(t.expectancy) : '—';
   expEl.className   = 'val ' + pcc(t.expectancy);
 
-  // ── Symbol table ──
+  // Symbol table
   const tbody = $('an-tbody');
   const syms  = data.symbols || [];
   if(syms.length > 0) {
     tbody.innerHTML = syms.map(s => {
       const pc2 = v => parseFloat(v||0) >= 0 ? 'g' : 'r';
       const wrC = s.win_rate >= 60 ? 'g' : s.win_rate < 40 ? 'r' : 'y';
-      const orphanNote = s.orphan_count > 0 ? ` <span title="${s.orphan_count} sell(s) missing buy — P&L incomplete" style="color:#d29922;cursor:help">⚠️</span>` : '';
       return `<tr>
-        <td><strong>${s.symbol}</strong>${orphanNote}</td>
+        <td><strong>${s.symbol}</strong></td>
         <td>${s.trades}</td>
         <td class="g">${s.wins}</td><td class="r">${s.losses}</td>
         <td class="${wrC}">${s.win_rate}%</td>
@@ -2174,14 +2152,15 @@ function renderAnalytics9(data) {
         <td class="g">${fmt(s.avg_win)}</td>
         <td class="r">${fmt(s.avg_loss)}</td>
         <td>${s.profit_factor}</td>
-        <td class="${pc2(s.roi_pct)}">${(s.roi_pct||0)>=0?'+':''}${s.roi_pct||0}%</td>
+        <td class="${pc2(s.roi_pct)}">${(s.roi_pct||0) >= 0 ? '+' : ''}${s.roi_pct||0}%</td>
         <td style="color:#8b949e">${fmt(s.total_investment||0)}</td>
         <td class="g">${fmt(s.max_win)}</td>
         <td class="r">${fmt(s.max_loss)}</td>
       </tr>`;
     }).join('');
   } else {
-    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e;padding:20px">No closed trade data.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#8b949e">
+      No closed trade data. Close some positions or connect Alpaca with filled orders.</td></tr>`;
   }
 
   const curve = data.equity_curve || [];
@@ -2439,161 +2418,95 @@ function mfQuick(msg) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// INVESTMENT CALCULATOR  — rewritten to avoid innerHTML-on-tr browser bug
+// INVESTMENT CALCULATOR
 // ══════════════════════════════════════════════════════════════════════════════
-let calcRows = [];   // [{id, sym, price, shares}]
-let calcNextId = 1;
+let calcRowId = 0;
 
-function calcInit() {
-  calcRows = [];
-  calcNextId = 1;
-  for(let i=0;i<5;i++) calcRows.push({id:calcNextId++, sym:'', price:'', shares:''});
-  calcRender();
-}
-
-function calcAddRow() {
-  calcRows.push({id:calcNextId++, sym:'', price:'', shares:''});
-  calcRender();
+function calcAddRow(sym='', price='', shares='') {
+  const id  = ++calcRowId;
+  const tbody = $('calc-tbody');
+  const tr = document.createElement('tr');
+  tr.id = `calc-row-${id}`;
+  tr.style.cssText = 'border-bottom:1px solid #21262d';
+  tr.innerHTML = `
+    <td style="padding:6px 10px">
+      <input type="text" id="calc-sym-${id}" value="${sym}"
+        placeholder="e.g. AAPL"
+        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-transform:uppercase"
+        oninput="this.value=this.value.toUpperCase(); calcRecalc()">
+    </td>
+    <td style="padding:6px 10px">
+      <input type="number" id="calc-price-${id}" value="${price}"
+        placeholder="0.00" min="0" step="0.01"
+        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-align:right"
+        oninput="calcRecalc()">
+    </td>
+    <td style="padding:6px 10px">
+      <input type="number" id="calc-shares-${id}" value="${shares}"
+        placeholder="0" min="0" step="1"
+        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-align:right"
+        oninput="calcRecalc()">
+    </td>
+    <td id="calc-cost-${id}" style="padding:6px 10px;text-align:right;color:#e6edf3;font-weight:600">$0.00</td>
+    <td id="calc-rem-${id}"  style="padding:6px 10px;text-align:right;font-weight:600;color:#8b949e">—</td>
+    <td style="padding:6px 6px;text-align:center">
+      <button onclick="calcRemoveRow(${id})" title="Remove row"
+        style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:14px;line-height:1;padding:2px 5px"
+        onmouseover="this.style.color='#f85149'" onmouseout="this.style.color='#8b949e'">✕</button>
+    </td>
+  </tr>`;
+  tbody.appendChild(tr);
+  calcRecalc();
 }
 
 function calcRemoveRow(id) {
-  calcRows = calcRows.filter(r=>r.id!==id);
-  calcRender();
+  const row = $(`calc-row-${id}`);
+  if(row) row.remove();
+  calcRecalc();
 }
 
 function calcClearAll() {
-  calcRows = [];
-  calcNextId = 1;
-  calcRender();
+  $('calc-tbody').innerHTML = '';
+  calcRowId = 0;
+  calcRecalc();
 }
 
-function calcRender() {
-  const tbody = document.getElementById('calc-tbody');
-  if(!tbody) return;
+function calcRecalc() {
+  const budget  = parseFloat($('calc-budget')?.value) || 0;
+  const rows    = [...$('calc-tbody').querySelectorAll('tr')];
+  let   running = budget;
+  let   totalInvested = 0;
 
-  // Save current input values before re-render
-  calcRows.forEach(r => {
-    const s = document.getElementById('calc-sym-'+r.id);
-    const p = document.getElementById('calc-price-'+r.id);
-    const q = document.getElementById('calc-shares-'+r.id);
-    if(s) r.sym    = s.value;
-    if(p) r.price  = p.value;
-    if(q) r.shares = q.value;
-  });
-
-  const budget = parseFloat(document.getElementById('calc-budget')?.value) || 0;
-  let running = budget;
-  let totalInvested = 0;
-
-  // Build rows HTML using table API to avoid the innerHTML-on-tr bug
-  tbody.innerHTML = '';
-  calcRows.forEach(r => {
-    const price  = parseFloat(r.price)  || 0;
-    const shares = parseFloat(r.shares) || 0;
+  rows.forEach(tr => {
+    const id     = tr.id.replace('calc-row-', '');
+    const price  = parseFloat($(`calc-price-${id}`)?.value)  || 0;
+    const shares = parseFloat($(`calc-shares-${id}`)?.value) || 0;
     const cost   = price * shares;
     totalInvested += cost;
     running -= cost;
 
-    const remColor = !budget ? '#8b949e' : running < 0 ? '#f85149' : running < budget*0.1 ? '#d29922' : '#3fb950';
-    const remText  = !budget ? '—' : '$'+running.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-    const tr = tbody.insertRow();
-    tr.id = 'calc-row-'+r.id;
-    tr.style.borderBottom = '1px solid #21262d';
-
-    // Cell 1: Symbol
-    const c1 = tr.insertCell(); c1.style.cssText='padding:6px 10px';
-    const inp1 = document.createElement('input');
-    inp1.type='text'; inp1.id='calc-sym-'+r.id; inp1.value=r.sym;
-    inp1.placeholder='e.g. AAPL';
-    inp1.style.cssText='width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-transform:uppercase;box-sizing:border-box';
-    inp1.oninput = function(){ this.value=this.value.toUpperCase(); calcRecalcLive(); };
-    c1.appendChild(inp1);
-
-    // Cell 2: Price
-    const c2 = tr.insertCell(); c2.style.cssText='padding:6px 10px';
-    const inp2 = document.createElement('input');
-    inp2.type='number'; inp2.id='calc-price-'+r.id; inp2.value=r.price;
-    inp2.placeholder='0.00'; inp2.min='0'; inp2.step='0.01';
-    inp2.style.cssText='width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-align:right;box-sizing:border-box';
-    inp2.oninput = calcRecalcLive;
-    c2.appendChild(inp2);
-
-    // Cell 3: Shares
-    const c3 = tr.insertCell(); c3.style.cssText='padding:6px 10px';
-    const inp3 = document.createElement('input');
-    inp3.type='number'; inp3.id='calc-shares-'+r.id; inp3.value=r.shares;
-    inp3.placeholder='0'; inp3.min='0'; inp3.step='1';
-    inp3.style.cssText='width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:12px;text-align:right;box-sizing:border-box';
-    inp3.oninput = calcRecalcLive;
-    c3.appendChild(inp3);
-
-    // Cell 4: Cost
-    const c4 = tr.insertCell();
-    c4.id='calc-cost-'+r.id;
-    c4.style.cssText='padding:6px 10px;text-align:right;color:#e6edf3;font-weight:600';
-    c4.textContent = '$'+cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-    // Cell 5: Remaining
-    const c5 = tr.insertCell();
-    c5.id='calc-rem-'+r.id;
-    c5.style.cssText='padding:6px 10px;text-align:right;font-weight:600;color:'+remColor;
-    c5.textContent = remText;
-
-    // Cell 6: Remove button
-    const c6 = tr.insertCell(); c6.style.cssText='padding:6px 6px;text-align:center';
-    const btn = document.createElement('button');
-    btn.title='Remove'; btn.textContent='✕';
-    btn.style.cssText='background:none;border:none;cursor:pointer;color:#8b949e;font-size:14px;line-height:1;padding:2px 6px';
-    btn.onmouseover=function(){this.style.color='#f85149'};
-    btn.onmouseout =function(){this.style.color='#8b949e'};
-    btn.onclick    = (function(rid){ return function(){ calcRemoveRow(rid); }; })(r.id);
-    c6.appendChild(btn);
+    const costEl = $(`calc-cost-${id}`);
+    const remEl  = $(`calc-rem-${id}`);
+    if(costEl) costEl.textContent = `$${cost.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    if(remEl) {
+      if(!budget) {
+        remEl.textContent = '—';
+        remEl.style.color = '#8b949e';
+      } else {
+        remEl.textContent = `$${running.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+        remEl.style.color = running < 0 ? '#f85149' : running < budget * 0.1 ? '#d29922' : '#3fb950';
+      }
+    }
   });
 
-  // Footer totals
-  const totalEl = document.getElementById('calc-total-cost');
-  const finalEl = document.getElementById('calc-final-remaining');
-  if(totalEl) totalEl.textContent = '$'+totalInvested.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const totalEl = $('calc-total-cost');
+  const finalEl = $('calc-final-remaining');
+  if(totalEl) totalEl.textContent = `$${totalInvested.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
   if(finalEl) {
     if(!budget) { finalEl.textContent=''; return; }
     const rem = budget - totalInvested;
-    finalEl.textContent = '$'+rem.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' remaining';
-    finalEl.style.color = rem<0?'#f85149':rem<budget*0.1?'#d29922':'#3fb950';
-  }
-}
-
-function calcRecalcLive() {
-  // Re-read all live inputs and update totals without full re-render
-  calcRows.forEach(r => {
-    const s=document.getElementById('calc-sym-'+r.id);
-    const p=document.getElementById('calc-price-'+r.id);
-    const q=document.getElementById('calc-shares-'+r.id);
-    if(s) r.sym=s.value;
-    if(p) r.price=p.value;
-    if(q) r.shares=q.value;
-  });
-  const budget = parseFloat(document.getElementById('calc-budget')?.value)||0;
-  let running=budget, total=0;
-  calcRows.forEach(r=>{
-    const cost=(parseFloat(r.price)||0)*(parseFloat(r.shares)||0);
-    total+=cost; running-=cost;
-    const c=document.getElementById('calc-cost-'+r.id);
-    const m=document.getElementById('calc-rem-'+r.id);
-    if(c) c.textContent='$'+cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    if(m){
-      if(!budget){m.textContent='—';m.style.color='#8b949e';}
-      else{m.textContent='$'+running.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});m.style.color=running<0?'#f85149':running<budget*0.1?'#d29922':'#3fb950';}
-    }
-  });
-  const te=document.getElementById('calc-total-cost');
-  const fe=document.getElementById('calc-final-remaining');
-  if(te) te.textContent='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  if(fe){
-    if(!budget){fe.textContent='';return;}
-    const rem=budget-total;
-    fe.textContent='$'+rem.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' remaining';
-    fe.style.color=rem<0?'#f85149':rem<budget*0.1?'#d29922':'#3fb950';
+    finalEl.textContent = `$${rem.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} remaining`;
+    finalEl.style.color = rem < 0 ? '#f85149' : rem < budget * 0.1 ? '#d29922' : '#3fb950';
   }
 }
 
@@ -2601,29 +2514,38 @@ let calcOpened = false;
 function calcOnOpen() {
   if(calcOpened) return;
   calcOpened = true;
-  calcInit();
+  // Seed with 3 blank rows to get started
+  calcAddRow(); calcAddRow(); calcAddRow();
 }
 
 async function calcFetchPrices() {
-  const syms = calcRows.map(r=>({id:r.id, sym:(document.getElementById('calc-sym-'+r.id)?.value||'').trim().toUpperCase()})).filter(r=>r.sym);
-  if(!syms.length){ alert('Enter at least one ticker symbol first.'); return; }
-  const btn = document.querySelector('#pane-calc .btn-b');
-  if(btn){ btn.textContent='⏳ Fetching…'; btn.disabled=true; }
-  await Promise.all(syms.map(async ({id,sym})=>{
-    try{
-      const r=await apiFetch('/api/calc/price/'+sym);
-      if(r.price){
-        const el=document.getElementById('calc-price-'+id);
-        if(el){ el.value=r.price; el.style.borderColor='#3fb950'; const row=calcRows.find(x=>x.id===id); if(row) row.price=String(r.price); }
+  const rows = [...$('calc-tbody').querySelectorAll('tr')];
+  if(!rows.length) { alert('Add some stock rows first.'); return; }
+
+  const syms = rows.map(tr => {
+    const id = tr.id.replace('calc-row-','');
+    return { id, sym: ($(`calc-sym-${id}`)?.value||'').trim().toUpperCase() };
+  }).filter(r => r.sym);
+
+  if(!syms.length) { alert('Enter at least one ticker symbol.'); return; }
+
+  // Fetch latest bar price from Alpaca for each symbol
+  const fetching = syms.map(async ({id, sym}) => {
+    try {
+      const r = await apiFetch(`/api/calc/price/${sym}`);
+      if(r.price) {
+        const el = $(`calc-price-${id}`);
+        if(el) { el.value = r.price; el.style.borderColor='#3fb950'; }
       }
-    }catch(e){
-      const el=document.getElementById('calc-price-'+id);
+    } catch(e) {
+      const el = $(`calc-price-${id}`);
       if(el) el.style.borderColor='#f85149';
     }
-  }));
-  if(btn){ btn.textContent='📡 Fetch Prices'; btn.disabled=false; }
-  calcRecalcLive();
+  });
+  await Promise.all(fetching);
+  calcRecalc();
 }
+
 </script>
 </body>
 </html>
