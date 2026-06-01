@@ -187,7 +187,7 @@ def _compute_analytics(rows: list) -> dict:
         "trades": 0, "wins": 0, "losses": 0,
         "total_pnl": 0.0, "win_pnl": 0.0, "loss_pnl": 0.0,
         "max_win": 0.0, "max_loss": 0.0,
-        "total_investment": 0.0,
+        "total_investment": 0.0, "orphan_count": 0,
     })
     timeline = []
 
@@ -200,7 +200,9 @@ def _compute_analytics(rows: list) -> dict:
         s["trades"]           += 1
         s["total_pnl"]        += pnl
         s["total_investment"] += qty * ep
-        if pnl > 0:
+        s["total_investment"] += qty * ep
+        if r.get("orphan"):
+            s["orphan_count"] += 1
             s["wins"]    += 1;  s["win_pnl"] += pnl
             s["max_win"]  = max(s["max_win"], pnl)
         else:
@@ -232,6 +234,7 @@ def _compute_analytics(rows: list) -> dict:
             "max_loss":      round(s["max_loss"], 2),
             "total_investment": round(s["total_investment"], 2),
             "roi_pct":       roi,
+            "orphan_count":  s["orphan_count"],
         })
 
     # Overall totals
@@ -350,8 +353,23 @@ def analytics_summary():
             "raw_count": 0, "source": "empty"
         })
 
+    # Detect open buys (buys with no matching sell in this dataset)
+    open_buys = []
+    if source in ("alpaca", "auto") and alpaca_available and alpaca_trades:
+        from collections import defaultdict as _dd
+        buy_qty  = _dd(float)
+        sell_qty = _dd(float)
+        for t in alpaca_trades:
+            if t["side"] == "buy":  buy_qty[t["symbol"]]  += t["qty"]
+            else:                   sell_qty[t["symbol"]] += t["qty"]
+        for sym, bq in buy_qty.items():
+            remaining = bq - sell_qty.get(sym, 0)
+            if remaining > 0.001:
+                open_buys.append({"symbol": sym, "open_qty": round(remaining, 4)})
+
     result = _compute_analytics(rows)
     result["source"] = rows[0].get("source", "db") if rows else "empty"
+    result["open_buys"] = open_buys
     result["date_from"] = date_from
     result["date_to"]   = date_to
     return jsonify(result)
