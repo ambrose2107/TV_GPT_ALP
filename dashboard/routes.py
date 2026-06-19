@@ -26,6 +26,12 @@ def index():
         return redirect(url_for("dashboard.login"))
     return render_template("dashboard.html")
 
+@dashboard_bp.route("/terminal")
+def terminal():
+    if not session.get("logged_in"):
+        return redirect(url_for("dashboard.login"))
+    return render_template("terminal.html")
+
 @dashboard_bp.route("/login", methods=["GET","POST"])
 def login():
     error = None
